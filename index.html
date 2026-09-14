@@ -17,7 +17,26 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="app-screen" class="screen">
+    <div id="login-screen" class="screen active">
+      <div class="mobile-card login-card">
+        <div class="brand-row">
+          <div class="brand-mark">EP</div>
+          <div>
+            <p class="eyebrow small">Entrenador personal</p>
+            <h1>Fit Flow</h1>
+          </div>
+        </div>
+
+        <p class="simple-copy">
+          Inicia sessió amb Google per continuar i seleccionar d'on vols llegir la teva informació
+          d'entrenaments.
+        </p>
+
+        <div id="google-login-btn" class="google-login-button" aria-label="Iniciar sessió amb Google"></div>
+      </div>
+    </div>
+
+    <div id="app-screen" class="screen hidden">
       <main class="app-shell">
         <header class="topbar">
           <div class="brand-row compact">
@@ -27,7 +46,10 @@
               <h2>Fit Flow</h2>
             </div>
           </div>
-          <div id="user-status" class="status-pill offline">No autenticat</div>
+          <div class="topbar-actions">
+            <div id="user-status" class="status-pill offline">No autenticat</div>
+            <button id="logout-btn" class="button ghost" type="button">Tancar sessió</button>
+          </div>
         </header>
 
         <section class="panel panel-directory">
@@ -184,6 +206,7 @@
       </main>
     </div>
 
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="config.js"></script>
     <script src="script.js"></script>
   </body>

@@ -1,6 +1,9 @@
+const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
 const GOOGLE_API_KEY = window.GOOGLE_API_KEY || 'YOUR_GOOGLE_API_KEY';
+const USER_KEY = 'fitflow-user';
 const DIRECTORY_KEY = 'fitflow-directory';
 
+const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
 const userStatus = document.getElementById('user-status');
 const resultPanel = document.getElementById('result-panel');
@@ -8,6 +11,9 @@ const resultContent = document.getElementById('result-content');
 const directoryInput = document.getElementById('directory-id');
 const rememberDirectory = document.getElementById('remember-directory');
 const proposedFields = document.getElementById('proposed-fields');
+
+let accessToken = null;
+let tokenClient = null;
 
 const trainingMap = {
   forca: {
@@ -35,7 +41,19 @@ const focusMap = {
   recuperacio: 'recuperació i mobilitat'
 };
 
+function showApp() {
+  if (loginScreen) loginScreen.classList.add('hidden');
+  if (appScreen) appScreen.classList.remove('hidden');
+}
+
+function showLogin() {
+  if (appScreen) appScreen.classList.add('hidden');
+  if (loginScreen) loginScreen.classList.remove('hidden');
+}
+
 function setAccessStatus(isAuthenticated) {
+  if (!userStatus) return;
+
   if (isAuthenticated) {
     userStatus.textContent = 'Autenticat';
     userStatus.classList.remove('offline');
@@ -46,6 +64,20 @@ function setAccessStatus(isAuthenticated) {
   userStatus.textContent = 'No autenticat';
   userStatus.classList.remove('online');
   userStatus.classList.add('offline');
+}
+
+function setUser(user) {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  userStatus.textContent = `Autenticat: ${user.name}`;
+  userStatus.classList.remove('offline');
+  userStatus.classList.add('online');
+}
+
+function clearUser() {
+  localStorage.removeItem(USER_KEY);
+  accessToken = null;
+  setAccessStatus(false);
+  showLogin();
 }
 
 function loadDirectoryPreference() {
@@ -72,13 +104,6 @@ function saveDirectoryPreference() {
 
   resultPanel.classList.add('hidden');
   resultContent.innerHTML = '';
-}
-
-function setAccessStatusFromValidation(hasAccess) {
-  setAccessStatus(hasAccess);
-  if (hasAccess) {
-    appScreen.classList.remove('hidden');
-  }
 }
 
 function toggleModeFields() {
@@ -140,6 +165,67 @@ function extractGoogleId(value) {
   return null;
 }
 
+function requestDriveAccess() {
+  if (!tokenClient) {
+    console.warn('Google token client no està preparat.');
+    return;
+  }
+
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function setupGoogleAuth() {
+  if (!window.google || !window.google.accounts) {
+    console.warn('Google Identity Services encara no està disponible.');
+    return;
+  }
+
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    callback: (response) => {
+      accessToken = response.access_token || null;
+      if (accessToken) {
+        setAccessStatus(true);
+      }
+    }
+  });
+
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleCredentialResponse,
+    auto_select: false,
+    context: 'signin'
+  });
+
+  google.accounts.id.renderButton(document.getElementById('google-login-btn'), {
+    theme: 'outline',
+    size: 'large',
+    width: '100%',
+    text: 'continue_with'
+  });
+}
+
+function handleCredentialResponse(response) {
+  if (!response.credential) {
+    return;
+  }
+
+  const payload = JSON.parse(
+    atob(response.credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
+  );
+
+  const user = {
+    name: payload.name || payload.given_name || 'Usuari',
+    email: payload.email || 'sense-email@google.com'
+  };
+
+  setUser(user);
+  requestDriveAccess();
+  showApp();
+  loadDirectoryPreference();
+}
+
 async function validateSharedGoogleLink(rawUrl) {
   const resultBox = document.getElementById('link-check-result');
   const url = rawUrl.trim();
@@ -151,11 +237,10 @@ async function validateSharedGoogleLink(rawUrl) {
     return;
   }
 
-  if (GOOGLE_API_KEY === 'YOUR_GOOGLE_API_KEY') {
+  if (!accessToken) {
     resultBox.innerHTML = `
-      <strong>URL detectada:</strong> ${id}<br />
-      No es pot comptar fitxers/carpetes des del navegador sense una API key de Google Cloud.<br />
-      Per fer-ho bé, comparteix la carpeta com a <strong>"Qualsevol amb l’enllaç pot veure-ho"</strong> i configura una API key pública a <strong>config.js</strong>.
+      <strong>Primer has d’iniciar sessió amb Google.</strong><br />
+      Necessitem autoritzar l’accés a Google Drive per poder llegir el directori o full compartit.
     `;
     setAccessStatus(false);
     return;
@@ -163,12 +248,17 @@ async function validateSharedGoogleLink(rawUrl) {
 
   try {
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q='${id}'+in+parents+and+trashed=false&key=${GOOGLE_API_KEY}&fields=files(id,name,mimeType),nextPageToken&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-      { method: 'GET' }
+      `https://www.googleapis.com/drive/v3/files?q='${id}' in parents and trashed=false&fields=files(id,name,mimeType),nextPageToken&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      }
     );
 
     if (!response.ok) {
-      throw new Error('No es pot llegir aquesta carpeta amb la clau actual.');
+      throw new Error('No es pot llegir aquesta carpeta amb el compte actual. Comprova els permisos del Drive i que has autoritzat l’accés.');
     }
 
     const data = await response.json();
@@ -181,13 +271,13 @@ async function validateSharedGoogleLink(rawUrl) {
       <strong>ID:</strong> ${id}<br />
       <strong>Fitxers:</strong> ${fitxers}<br />
       <strong>Carpetes:</strong> ${carpetes}<br />
-      <strong>Es pot consultar sense login:</strong> sí, sempre que la carpeta estigui compartida públicament i la clau sigui vàlida.
+      <strong>Accés:</strong> autoritzat amb Google OAuth.
     `;
     setAccessStatus(true);
   } catch (error) {
     resultBox.innerHTML = `
       <strong>No s’ha pogut validar el directori.</strong><br />
-      Pot passar perquè el link no està compartit públicament, perquè l’API key no és vàlida o perquè la carpeta no és accessible sense login.<br />
+      Pot passar perquè el link no és accessible per aquest compte, perquè la carpeta no està compartida correctament o perquè falta autorització.
       <small>${error.message}</small>
     `;
     setAccessStatus(false);
@@ -222,10 +312,6 @@ function initApp() {
     });
   }
 
-  document.querySelectorAll('input[name="mode"]').forEach((radio) => {
-    radio.addEventListener('change', toggleModeFields);
-  });
-
   if (trainerForm) {
     trainerForm.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -235,9 +321,26 @@ function initApp() {
     });
   }
 
+  const savedUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+  if (savedUser) {
+    setUser(savedUser);
+    showApp();
+  } else {
+    showLogin();
+  }
+
   loadDirectoryPreference();
-  appScreen.classList.remove('hidden');
   toggleModeFields();
+  setupGoogleAuth();
+
+  document.getElementById('logout-btn').addEventListener('click', () => {
+    clearUser();
+    directoryInput.value = '';
+    localStorage.removeItem(DIRECTORY_KEY);
+    if (google && google.accounts && google.accounts.id) {
+      google.accounts.id.disableAutoSelect();
+    }
+  });
 }
 
-document.addEventListener('DOMContentLoaded', initApp);
+initApp();
