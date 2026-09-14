@@ -194,28 +194,50 @@ async function validateSharedGoogleLink(rawUrl) {
   }
 }
 
-document.getElementById('directory-form').addEventListener('submit', (event) => {
-  event.preventDefault();
-  saveDirectoryPreference();
-});
+function initApp() {
+  const directoryForm = document.getElementById('directory-form');
+  const linkCheckForm = document.getElementById('link-check-form');
+  const validateLinkBtn = document.getElementById('validate-link-btn');
+  const trainerForm = document.getElementById('trainer-form');
 
-document.getElementById('link-check-form').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const sharedLink = document.getElementById('shared-link').value;
-  validateSharedGoogleLink(sharedLink);
-});
+  if (directoryForm) {
+    directoryForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      saveDirectoryPreference();
+    });
+  }
 
-document.querySelectorAll('input[name="mode"]').forEach((radio) => {
-  radio.addEventListener('change', toggleModeFields);
-});
+  if (linkCheckForm) {
+    linkCheckForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const sharedLink = document.getElementById('shared-link').value;
+      validateSharedGoogleLink(sharedLink);
+    });
+  }
 
-document.getElementById('trainer-form').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const formData = new FormData(event.currentTarget);
-  resultPanel.classList.remove('hidden');
-  resultContent.innerHTML = createWorkoutPlan(formData);
-});
+  if (validateLinkBtn) {
+    validateLinkBtn.addEventListener('click', () => {
+      const sharedLink = document.getElementById('shared-link').value;
+      validateSharedGoogleLink(sharedLink);
+    });
+  }
 
-loadDirectoryPreference();
-appScreen.classList.remove('hidden');
-toggleModeFields();
+  document.querySelectorAll('input[name="mode"]').forEach((radio) => {
+    radio.addEventListener('change', toggleModeFields);
+  });
+
+  if (trainerForm) {
+    trainerForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      resultPanel.classList.remove('hidden');
+      resultContent.innerHTML = createWorkoutPlan(formData);
+    });
+  }
+
+  loadDirectoryPreference();
+  appScreen.classList.remove('hidden');
+  toggleModeFields();
+}
+
+document.addEventListener('DOMContentLoaded', initApp);
