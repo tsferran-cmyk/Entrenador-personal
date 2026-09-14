@@ -6,6 +6,7 @@ const DIRECTORY_KEY = 'fitflow-directory';
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
 const userStatus = document.getElementById('user-status');
+const googleLoginHeader = document.getElementById('google-login-header');
 const resultPanel = document.getElementById('result-panel');
 const resultContent = document.getElementById('result-content');
 const directoryInput = document.getElementById('directory-id');
@@ -44,11 +45,17 @@ const focusMap = {
 function showApp() {
   if (loginScreen) loginScreen.classList.add('hidden');
   if (appScreen) appScreen.classList.remove('hidden');
+  if (googleLoginHeader) {
+    googleLoginHeader.classList.toggle('hidden', !!localStorage.getItem(USER_KEY));
+  }
 }
 
 function showLogin() {
   if (appScreen) appScreen.classList.add('hidden');
   if (loginScreen) loginScreen.classList.remove('hidden');
+  if (googleLoginHeader) {
+    googleLoginHeader.classList.remove('hidden');
+  }
 }
 
 function setAccessStatus(isAuthenticated) {
@@ -204,6 +211,15 @@ function setupGoogleAuth() {
     width: '100%',
     text: 'continue_with'
   });
+
+  if (googleLoginHeader) {
+    google.accounts.id.renderButton(googleLoginHeader, {
+      theme: 'outline',
+      size: 'large',
+      width: '180',
+      text: 'continue_with'
+    });
+  }
 }
 
 function handleCredentialResponse(response) {

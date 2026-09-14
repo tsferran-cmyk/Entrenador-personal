@@ -120,6 +120,18 @@ h2, h3 {
   min-height: 48px;
 }
 
+.google-login-button.compact {
+  min-height: 38px;
+  width: min(180px, 100%);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
