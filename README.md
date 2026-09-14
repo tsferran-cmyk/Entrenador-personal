@@ -1,5 +1,7 @@
 # Entrenador personal + Google Sheets
 
+> Nota de validació de desplegament: aquesta versió s’ha revisat el 14/09/2026 i està preparada per publicar-se a GitHub Pages amb la branca `main` com a font de desplegament.
+
 Aplicació web per gestionar accés segur amb Google, carregar les dades d’un full de Google Sheets i generar entrenaments personalitzats a partir d’un breu qüestionari.
 
 ## Què fa
