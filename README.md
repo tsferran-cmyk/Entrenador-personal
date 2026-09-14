@@ -1,61 +1,90 @@
-# Entrenador personal
+# Entrenador personal + Google Sheets
 
-Una web de presentació per a un entrenador personal, dissenyada per a presentar serveis, objectius, programes i captar clients via formularis.
+Aplicació web per gestionar accés segur amb Google, carregar les dades d’un full de Google Sheets i generar entrenaments personalitzats a partir d’un breu qüestionari.
 
-## Requisits
+## Què fa
 
-- Un navegador modern.
-- Opcionalment, Python per servir el projecte localment.
+- Login mitjançant Google Identity Services
+- Accés a Google Sheets amb OAuth 2.0
+- Pregunta si vols:
+  - accedir a un entrenament propi
+  - o que la web et proposi un entrenament
+- Si és proposat, pregunta:
+  - tipus d’entrenament: força, mobilitat o força + mobilitat
+  - durada: 15, 30, 45 o 60 minuts
+  - zona a treballar: part superior, core, inferior, full body o recuperació
+- Genera un entrenament automàtic
+
+## Important: arquitectura real a GitHub
+
+GitHub Pages és una web estàtica. Per autenticar amb Google i llegir dades privades de Google Sheets, el que s’ha de fer és:
+
+1. Configurar OAuth 2.0 amb Google Cloud
+2. Habilitar Google Sheets API
+3. Registrar l’origen web a GitHub Pages i el localhost per provar-ho localment
+4. Autoritzar els permisos del compte de Google
+
+Això permet que l’usuari faci login amb el seu compte i autoritzi només el seu propi full de Google Sheets. No hi ha una base de dades compartida i no es penja cap secret al repositori.
+
+## Fitxers principals
+
+- `index.html` — formulari i pantalla principal
+- `styles.css` — estil i maquetació
+- `script.js` — flux de login i generació de l’entrenament
+- `config.js` — configuració del Client ID de Google
+
+## Configurar Google
+
+1. Crea un projecte a Google Cloud Console
+2. Habilita l’API de Google Sheets
+3. Crea un OAuth Client ID de tipus Web
+4. Afegeix com a JavaScript origins:
+   - `http://localhost:8000`
+   - `https://<el-teu-usuari>.github.io`
+5. Omple el valor de `GOOGLE_CLIENT_ID` a `config.js`
+
+Exemple:
+
+```js
+window.GOOGLE_CLIENT_ID = '123456789012-abc...apps.googleusercontent.com';
+```
 
 ## Executar localment
 
-Des de la carpeta del projecte:
-
 ```bash
+cd "C:\ruta\al\projecte"
 python -m http.server 8000
 ```
 
-I obre a:
+I obre:
 
 ```text
 http://localhost:8000
 ```
 
-## Estructura
-
-- `index.html` — contingut de la pàgina
-- `styles.css` — estil i maquetació
-- `script.js` — lògica de programes i formularis
-
-## Publicar a GitHub
-
-1. Crea un repositori a GitHub.
-2. Inicialitza el repositori local amb `git init`.
-3. Connecta el remot:
+## Pujar a GitHub
 
 ```bash
-git remote add origin https://github.com/USUARI/REPOSITORI.git
-```
-
-4. Fes el primer commit i puja:
-
-```bash
+git init
 git add .
-git commit -m "Primer commit: web d'entrenador personal"
+git commit -m "Primer commit: web entrenador personal"
+git branch -M main
+git remote add origin https://github.com/<USUARI>/<REPOSITORI>.git
 git push -u origin main
 ```
 
-## Personalització
+## Activar GitHub Pages
 
-- Canvia el nom i el text a `index.html`.
-- Modifica els colors i la tipografia a `styles.css`.
-- Ajusta la lògica de planificació a `script.js`.
+- Entra al repositori de GitHub
+- Settings > Pages
+- Source: Deploy from a branch
+- Branch: main / root
 
-## Recomendació
+## Recomendació de continuació
 
-Per a una versió més avançada, el següent pas és afegir:
+La següent millora útil és afegir:
 
-- panell d'administració per gestionar clients
-- login d'entrenador
-- base de dades o Google Sheets
-- reserva de cites i pagaments
+- una base de dades pròpia per gravar plans assignats
+- una pàgina d’admin amb clients i activitat
+- un botó per guardar entrenaments a Google Sheets
+- login amb rol d’entrenador i client
