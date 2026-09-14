@@ -1,17 +1,13 @@
-const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
-const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
-const state = {
-  user: null,
-  accessToken: null,
-  tokenClient: null,
-};
+const GOOGLE_API_KEY = window.GOOGLE_API_KEY || 'YOUR_GOOGLE_API_KEY';
+const DIRECTORY_KEY = 'fitflow-directory';
 
+const appScreen = document.getElementById('app-screen');
 const userStatus = document.getElementById('user-status');
 const resultPanel = document.getElementById('result-panel');
 const resultContent = document.getElementById('result-content');
+const directoryInput = document.getElementById('directory-id');
+const rememberDirectory = document.getElementById('remember-directory');
 const proposedFields = document.getElementById('proposed-fields');
-const modeRadios = document.querySelectorAll('input[name="mode"]');
-const sheetInput = document.getElementById('sheet-id');
 
 const trainingMap = {
   forca: {
@@ -39,109 +35,66 @@ const focusMap = {
   recuperacio: 'recuperació i mobilitat'
 };
 
-function setUser(user) {
-  state.user = user;
-  const displayName = user?.name || 'Usuari';
-  const email = user?.email || 'sense email';
+function setAccessStatus(isAuthenticated) {
+  if (isAuthenticated) {
+    userStatus.textContent = 'Autenticat';
+    userStatus.classList.remove('offline');
+    userStatus.classList.add('online');
+    return;
+  }
 
-  userStatus.textContent = `Autenticat: ${displayName}`;
-  userStatus.classList.remove('offline');
-  userStatus.classList.add('online');
-
-  localStorage.setItem('trainer-user', JSON.stringify({ name: displayName, email }));
-}
-
-function clearUser() {
-  state.user = null;
-  state.accessToken = null;
   userStatus.textContent = 'No autenticat';
   userStatus.classList.remove('online');
   userStatus.classList.add('offline');
-  localStorage.removeItem('trainer-user');
 }
 
-function setupGoogleAuth() {
-  if (!window.google || !window.google.accounts) {
-    console.warn('Google Identity Services no està disponible encara.');
-    return;
+function loadDirectoryPreference() {
+  const saved = localStorage.getItem(DIRECTORY_KEY);
+  if (saved) {
+    directoryInput.value = saved;
+    rememberDirectory.checked = true;
   }
-
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleCredentialResponse,
-    auto_select: false,
-    context: 'signin'
-  });
-
-  google.accounts.id.renderButton(document.getElementById('google-login-btn'), {
-    theme: 'filled_blue',
-    size: 'large',
-    width: 250,
-    text: 'continue_with',
-    shape: 'pill'
-  });
-
-  state.tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: SHEETS_SCOPE,
-    callback: (response) => {
-      if (response.error) {
-        console.error('Error d’autorització de Sheets:', response.error);
-        resultContent.innerHTML = '<p>La connexió amb Google Sheets no s’ha pogut completar. Revisa el Client ID i el consentiment de l’aplicació.</p>';
-        resultPanel.classList.remove('hidden');
-        return;
-      }
-
-      state.accessToken = response.access_token;
-      const storedUser = JSON.parse(localStorage.getItem('trainer-user') || 'null');
-      if (storedUser) {
-        setUser(storedUser);
-      }
-    }
-  });
 }
 
-function handleCredentialResponse(response) {
-  if (!response.credential) {
-    return;
-  }
-
-  const payload = JSON.parse(atob(response.credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-  const user = {
-    name: payload.name || payload.given_name || 'Usuari',
-    email: payload.email || 'sense-email@google.com'
-  };
-
-  setUser(user);
-  state.accessToken = null;
-
-  if (GOOGLE_CLIENT_ID.includes('YOUR_GOOGLE')) {
-    resultContent.innerHTML = `
-      <p>Login de prova detectat.</p>
-      <p>Per connectar el teu compte real de Google, substitueix <strong>YOUR_GOOGLE_CLIENT_ID</strong> a <strong>config.js</strong> i habilita l’API de Google Sheets.</p>
-    `;
+function saveDirectoryPreference() {
+  const directoryValue = directoryInput.value.trim();
+  if (!directoryValue) {
+    resultContent.innerHTML = '<p>Si us plau, indica l’ID del full o carpeta de Google Drive.</p>';
     resultPanel.classList.remove('hidden');
     return;
   }
 
-  if (state.tokenClient) {
-    state.tokenClient.requestAccessToken();
+  if (rememberDirectory.checked) {
+    localStorage.setItem(DIRECTORY_KEY, directoryValue);
+  } else {
+    localStorage.removeItem(DIRECTORY_KEY);
+  }
+
+  resultPanel.classList.add('hidden');
+  resultContent.innerHTML = '';
+}
+
+function setAccessStatusFromValidation(hasAccess) {
+  setAccessStatus(hasAccess);
+  if (hasAccess) {
+    appScreen.classList.remove('hidden');
   }
 }
 
 function toggleModeFields() {
-  const selectedMode = document.querySelector('input[name="mode"]:checked')?.value || 'propio';
-  proposedFields.classList.toggle('hidden', selectedMode === 'propio');
+  const mode = document.querySelector('input[name="mode"]:checked')?.value || 'propio';
+  proposedFields.classList.toggle('hidden', mode === 'propio');
 }
 
-function generateWorkoutPlan(formData) {
+function createWorkoutPlan(formData) {
   const mode = formData.get('mode');
 
   if (mode === 'propio') {
     return `
       <h3>Entrenament propi</h3>
-      <p>Has seleccionat accedir al teu entrenament personal. Si el teu full de Google Sheets té dades, les podràs carregar des del panell lateral.</p>
-      <p><strong>Compte connectat:</strong> ${state.user?.email || 'No autenticat'}</p>
+      <p>Has seleccionat llegir el teu propi entrenament des del directori autoritzat.</p>
+      <p><strong>Directori seleccionat:</strong> ${directoryInput.value.trim() || 'No definit'}</p>
+      <p><strong>Accés:</strong> ${userStatus.textContent}</p>
     `;
   }
 
@@ -164,37 +117,93 @@ function generateWorkoutPlan(formData) {
   `;
 }
 
-function readSheetValues(sheetId) {
-  const cleanId = sheetId.trim();
-  if (!cleanId) {
-    throw new Error('Falta l’ID del full de Google Sheets.');
+function extractGoogleId(value) {
+  if (!value) return null;
+
+  const normalized = value.trim();
+  const patterns = [
+    /[?&]id=([^&#]+)/,
+    /[?&]folderid=([^&#]+)/i,
+    /drive\.google\.com\/drive\/folders\/([A-Za-z0-9_-]+)/i,
+    /drive\.google\.com\/file\/d\/([A-Za-z0-9_-]+)/i,
+    /docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/i,
+    /[A-Za-z0-9_-]{10,}/
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match) {
+      return match[1] || match[0];
+    }
   }
 
-  if (!state.accessToken) {
-    throw new Error('Primer has de iniciar sessió amb Google i autoritzar l’accés a Google Sheets.');
-  }
-
-  return fetch(`https://sheets.googleapis.com/v4/spreadsheets/${cleanId}/values/Hoja1!A1:D30?valueRenderOption=FORMATTED_VALUE`, {
-    headers: { Authorization: `Bearer ${state.accessToken}` }
-  })
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error('No s’ha pogut llegir el full. Comprova l’ID i el consentiment de Google.');
-      }
-      return response.json();
-    })
-    .then((data) => {
-      const rows = data.values || [];
-      if (!rows.length) {
-        return '<p>El full està buit o no te dades per mostrar.</p>';
-      }
-
-      return rows
-        .slice(0, 6)
-        .map((row) => `<li>${row.join(' | ')}</li>`)
-        .join('');
-    });
+  return null;
 }
+
+async function validateSharedGoogleLink(rawUrl) {
+  const resultBox = document.getElementById('link-check-result');
+  const url = rawUrl.trim();
+  const id = extractGoogleId(url);
+
+  if (!url || !id) {
+    resultBox.innerHTML = '<strong>Link no vàlid.</strong> Introduïu un enllaç de Google Drive o Sheets vàlid.';
+    setAccessStatus(false);
+    return;
+  }
+
+  if (GOOGLE_API_KEY === 'YOUR_GOOGLE_API_KEY') {
+    resultBox.innerHTML = `
+      <strong>URL detectada:</strong> ${id}<br />
+      No es pot comptar fitxers/carpetes des del navegador sense una API key de Google Cloud.<br />
+      Per fer-ho bé, comparteix la carpeta com a <strong>"Qualsevol amb l’enllaç pot veure-ho"</strong> i configura una API key pública a <strong>config.js</strong>.
+    `;
+    setAccessStatus(false);
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q='${id}'+in+parents+and+trashed=false&key=${GOOGLE_API_KEY}&fields=files(id,name,mimeType),nextPageToken&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      { method: 'GET' }
+    );
+
+    if (!response.ok) {
+      throw new Error('No es pot llegir aquesta carpeta amb la clau actual.');
+    }
+
+    const data = await response.json();
+    const files = data.files || [];
+    const carpetes = files.filter((item) => item.mimeType === 'application/vnd.google-apps.folder').length;
+    const fitxers = files.filter((item) => item.mimeType !== 'application/vnd.google-apps.folder').length;
+
+    resultBox.innerHTML = `
+      <strong>Validació correcta.</strong><br />
+      <strong>ID:</strong> ${id}<br />
+      <strong>Fitxers:</strong> ${fitxers}<br />
+      <strong>Carpetes:</strong> ${carpetes}<br />
+      <strong>Es pot consultar sense login:</strong> sí, sempre que la carpeta estigui compartida públicament i la clau sigui vàlida.
+    `;
+    setAccessStatus(true);
+  } catch (error) {
+    resultBox.innerHTML = `
+      <strong>No s’ha pogut validar el directori.</strong><br />
+      Pot passar perquè el link no està compartit públicament, perquè l’API key no és vàlida o perquè la carpeta no és accessible sense login.<br />
+      <small>${error.message}</small>
+    `;
+    setAccessStatus(false);
+  }
+}
+
+document.getElementById('directory-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveDirectoryPreference();
+});
+
+document.getElementById('link-check-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const sharedLink = document.getElementById('shared-link').value;
+  validateSharedGoogleLink(sharedLink);
+});
 
 document.querySelectorAll('input[name="mode"]').forEach((radio) => {
   radio.addEventListener('change', toggleModeFields);
@@ -204,27 +213,9 @@ document.getElementById('trainer-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
   resultPanel.classList.remove('hidden');
-  resultContent.innerHTML = generateWorkoutPlan(formData);
+  resultContent.innerHTML = createWorkoutPlan(formData);
 });
 
-document.getElementById('load-own-plan').addEventListener('click', async () => {
-  try {
-    const rowsHtml = await readSheetValues(sheetInput.value);
-    resultPanel.classList.remove('hidden');
-    resultContent.innerHTML = `
-      <h3>Entrenaments guardats al full</h3>
-      <ul>${rowsHtml}</ul>
-    `;
-  } catch (error) {
-    resultPanel.classList.remove('hidden');
-    resultContent.innerHTML = `<p>${error.message}</p>`;
-  }
-});
-
-const storedUser = JSON.parse(localStorage.getItem('trainer-user') || 'null');
-if (storedUser) {
-  setUser(storedUser);
-}
-
+loadDirectoryPreference();
+appScreen.classList.remove('hidden');
 toggleModeFields();
-setupGoogleAuth();

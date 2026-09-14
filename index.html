@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Entrenador Personal | Google Sheets</title>
+    <title>Entrenador Personal</title>
     <meta
       name="description"
-      content="Entrenador personal amb accés segur amb Google i planificació d'entrenaments personalitzats."
+      content="Web d'entrenador personal amb login de Google, directori personal i qüestionari d'entrenament."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,56 +17,80 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand-box">
-          <div class="brand-mark">EP</div>
-          <div>
-            <p class="eyebrow small">Entrenador personal</p>
-            <h2>Fit Flow</h2>
+    <div id="app-screen" class="screen">
+      <main class="app-shell">
+        <header class="topbar">
+          <div class="brand-row compact">
+            <div class="brand-mark">EP</div>
+            <div>
+              <p class="eyebrow small">Entrenador personal</p>
+              <h2>Fit Flow</h2>
+            </div>
           </div>
-        </div>
+          <div id="user-status" class="status-pill offline">No autenticat</div>
+        </header>
 
-        <div class="login-card card">
-          <h3>Accés segur</h3>
-          <p>Inicia sessió amb el teu compte de Google per accedir al teu full de Google Sheets.</p>
-          <div id="google-login-btn" class="google-login-button" aria-label="Accedir amb Google"></div>
-          <div id="user-status" class="status-badge offline">No autenticat</div>
-        </div>
+        <section class="panel panel-directory">
+          <div class="section-header">
+            <p class="eyebrow">Directori</p>
+            <h3>On es troben les teves dades d'entrenament?</h3>
+          </div>
 
-        <div class="card sheet-card">
-          <h3>Google Sheets</h3>
-          <label>
-            ID del full
-            <input id="sheet-id" type="text" placeholder="1AbC..." />
-          </label>
-          <button id="load-own-plan" class="button secondary full" type="button">
-            Carregar entrenament propi
-          </button>
-          <p class="tiny-help">Només es poden llegir les dades autoritzades al teu compte de Google.</p>
-        </div>
-      </aside>
+          <form id="directory-form" class="stack-form">
+            <label>
+              ID del full o carpeta de Google Drive
+              <input
+                id="directory-id"
+                type="text"
+                placeholder="1AbCdEfGh..."
+                autocomplete="off"
+              />
+            </label>
 
-      <main class="main-panel">
-        <section class="hero panel">
-          <p class="eyebrow">Benvingut</p>
-          <h1>Planifica entrenaments adaptats a tu nivell i disponibilitat.</h1>
-          <p class="subtitle">
-            Accedeix amb el teu compte de Google, revisa les teves dades i genera un entrenament
-            personalitzat o carrega un pla que ja tinguis guardat al full.
-          </p>
+            <label class="checkbox-row">
+              <input id="remember-directory" type="checkbox" checked />
+              <span>Recordar aquest directori al navegador</span>
+            </label>
+
+            <button type="submit" class="button primary full">Guardar directori</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="section-header">
+            <p class="eyebrow">Validació</p>
+            <h3>Comprovar un enllaç compartit de Google</h3>
+          </div>
+
+          <form id="link-check-form" class="stack-form">
+            <label>
+              Enllaç compartit de Drive o Sheets
+              <input
+                id="shared-link"
+                type="text"
+                placeholder="https://drive.google.com/drive/folders/..."
+                autocomplete="off"
+              />
+            </label>
+
+            <button type="submit" class="button ghost full">Validar enllaç</button>
+          </form>
+
+          <div id="link-check-result" class="link-check-result">
+            Posa un enllaç compartit per veure si es pot llegir sense login i quants fitxers o carpetes conté.
+          </div>
         </section>
 
         <section id="quiz-panel" class="panel">
-          <div class="section-heading">
+          <div class="section-header">
             <p class="eyebrow">Qüestionari</p>
-            <h2>Quin tipus d'entrenament vols?</h2>
+            <h3>Quin tipus d'entrenament vols fer?</h3>
           </div>
 
-          <form id="trainer-form">
-            <div class="question">
+          <form id="trainer-form" class="stack-form">
+            <div class="question-group">
               <label>Vols accedir a un entrenament propi o que te'n proposi un?</label>
-              <div class="options-row">
+              <div class="option-grid two">
                 <label class="option-card">
                   <input type="radio" name="mode" value="propio" checked />
                   <span>Entrenament propi</span>
@@ -78,10 +102,10 @@
               </div>
             </div>
 
-            <div id="proposed-fields">
-              <div class="question">
-                <label>Quin tipus d'entrenament vols fer?</label>
-                <div class="options-grid three">
+            <div id="proposed-fields" class="hidden">
+              <div class="question-group">
+                <label>Tipus d'entrenament</label>
+                <div class="option-grid three">
                   <label class="option-card">
                     <input type="radio" name="trainingType" value="forca" checked />
                     <span>Força</span>
@@ -97,9 +121,9 @@
                 </div>
               </div>
 
-              <div class="question">
-                <label>Quanta estona disposes?</label>
-                <div class="options-grid four">
+              <div class="question-group">
+                <label>Temps disponible</label>
+                <div class="option-grid four">
                   <label class="option-card">
                     <input type="radio" name="duration" value="15" />
                     <span>15'</span>
@@ -119,12 +143,12 @@
                 </div>
               </div>
 
-              <div class="question">
-                <label>Quin grup muscular o zona vols treballar?</label>
-                <div class="options-grid five">
+              <div class="question-group">
+                <label>Zona a treballar</label>
+                <div class="option-grid five">
                   <label class="option-card">
                     <input type="radio" name="focus" value="superior" />
-                    <span>Part superior</span>
+                    <span>Superior</span>
                   </label>
                   <label class="option-card">
                     <input type="radio" name="focus" value="core" />
@@ -146,21 +170,20 @@
               </div>
             </div>
 
-            <button type="submit" class="button primary">Generar entrenament</button>
+            <button type="submit" class="button primary full">Generar entrenament</button>
           </form>
         </section>
 
         <section id="result-panel" class="panel result-panel hidden">
-          <div class="section-heading">
+          <div class="section-header">
             <p class="eyebrow">Resultat</p>
-            <h2>Entrenament proposat</h2>
+            <h3>Entrenament</h3>
           </div>
           <div id="result-content" class="result-content"></div>
         </section>
       </main>
     </div>
 
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="config.js"></script>
     <script src="script.js"></script>
   </body>
