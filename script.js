@@ -3,6 +3,8 @@ const GOOGLE_API_KEY = window.GOOGLE_API_KEY || 'YOUR_GOOGLE_API_KEY';
 const USER_KEY = 'fitflow-user';
 const DIRECTORY_KEY = 'fitflow-directory';
 const DIRECTORY_STATUS_KEY = 'fitflow-directory-status';
+const TRAINING_PREFIX_KEY = 'fitflow-training-prefix';
+const TRAINING_FILE_KEY = 'fitflow-training-file';
 
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
@@ -11,6 +13,7 @@ const googleLoginHeader = document.getElementById('google-login-header');
 const resultPanel = document.getElementById('result-panel');
 const resultContent = document.getElementById('result-content');
 const directoryInput = document.getElementById('directory-id');
+const trainingFilePrefixInput = document.getElementById('training-file-prefix');
 const rememberDirectory = document.getElementById('remember-directory');
 const directorySettings = document.getElementById('directory-settings');
 const directorySettingsButton = document.getElementById('directory-settings-button');
@@ -22,6 +25,7 @@ const proposedFields = document.getElementById('proposed-fields');
 
 let accessToken = null;
 let tokenClient = null;
+let directorySettingsOpen = false;
 
 const trainingMap = {
   forca: {
@@ -115,6 +119,7 @@ function updateDirectoryFlow(openSettings = false) {
   directorySettingsAlert?.classList.toggle('hidden', validDirectory);
 
   if (openSettings) {
+    directorySettingsOpen = true;
     directorySettings?.classList.remove('hidden');
     quizPanel?.classList.add('hidden');
     directorySettingsButton?.setAttribute('aria-expanded', 'true');
@@ -122,6 +127,13 @@ function updateDirectoryFlow(openSettings = false) {
   }
 
   if (validDirectory) {
+    if (directorySettingsOpen) {
+      directorySettings?.classList.remove('hidden');
+      quizPanel?.classList.add('hidden');
+      directorySettingsButton?.setAttribute('aria-expanded', 'true');
+      return;
+    }
+
     directorySettings?.classList.add('hidden');
     quizPanel?.classList.remove('hidden');
     directorySettingsButton?.setAttribute('aria-expanded', 'false');
@@ -129,6 +141,7 @@ function updateDirectoryFlow(openSettings = false) {
   }
 
   directorySettings?.classList.remove('hidden');
+  directorySettingsOpen = true;
   directorySettingsButton?.setAttribute('aria-expanded', 'true');
   if (!validDirectory) {
     quizPanel?.classList.add('hidden');
@@ -137,9 +150,13 @@ function updateDirectoryFlow(openSettings = false) {
 
 function loadDirectoryPreference() {
   const saved = localStorage.getItem(DIRECTORY_KEY);
+  const savedPrefix = localStorage.getItem(TRAINING_PREFIX_KEY);
   if (saved) {
     directoryInput.value = saved;
     rememberDirectory.checked = true;
+  }
+  if (savedPrefix) {
+    trainingFilePrefixInput.value = savedPrefix;
   }
 }
 
@@ -154,8 +171,11 @@ function saveDirectoryPreference() {
 
   if (rememberDirectory.checked) {
     localStorage.setItem(DIRECTORY_KEY, directoryValue);
+    localStorage.setItem(TRAINING_PREFIX_KEY, trainingFilePrefixInput.value.trim() || 'entrenament');
   } else {
     localStorage.removeItem(DIRECTORY_KEY);
+    localStorage.removeItem(TRAINING_PREFIX_KEY);
+    localStorage.removeItem(TRAINING_FILE_KEY);
   }
 
   validateDriveDirectory(directoryValue);
@@ -326,7 +346,7 @@ async function validateDriveDirectory(rawUrl) {
   try {
     const query = encodeURIComponent(`'${id}' in parents and trashed=false`);
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType),nextPageToken&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,modifiedTime),nextPageToken&supportsAllDrives=true&includeItemsFromAllDrives=true`,
       {
         method: 'GET',
         headers: {
@@ -353,12 +373,25 @@ async function validateDriveDirectory(rawUrl) {
     const files = data.files || [];
     const carpetes = files.filter((item) => item.mimeType === 'application/vnd.google-apps.folder').length;
     const fitxers = files.filter((item) => item.mimeType !== 'application/vnd.google-apps.folder').length;
+    const prefix = trainingFilePrefixInput.value.trim() || 'entrenament';
+    const matchingFiles = files.filter((item) => (
+      item.mimeType !== 'application/vnd.google-apps.folder'
+      && item.name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())
+    ));
+    const selectedTrainingFile = selectLatestTrainingFile(matchingFiles, prefix);
+
+    if (selectedTrainingFile) {
+      localStorage.setItem(TRAINING_FILE_KEY, JSON.stringify(selectedTrainingFile));
+    } else {
+      localStorage.removeItem(TRAINING_FILE_KEY);
+    }
 
     resultBox.innerHTML = `
       <strong>Validació correcta.</strong><br />
       <strong>ID:</strong> ${id}<br />
       <strong>Fitxers:</strong> ${fitxers}<br />
       <strong>Carpetes:</strong> ${carpetes}<br />
+      <strong>Fitxer d'entrenament:</strong> ${selectedTrainingFile?.name || `No s'ha trobat cap fitxer amb el prefix "${prefix}"`}<br />
       <strong>Accés:</strong> autoritzat amb Google OAuth.
     `;
     setDirectoryStatus(true);
@@ -378,6 +411,31 @@ async function validateDriveDirectory(rawUrl) {
       googleLoginHeader?.classList.remove('hidden');
     }
   }
+}
+
+function selectLatestTrainingFile(files, prefix) {
+  if (!files.length) return null;
+
+  const normalizedPrefix = prefix.toLocaleLowerCase();
+  const getVersion = (file) => {
+    const suffix = file.name.slice(normalizedPrefix.length);
+    const dateMatch = suffix.match(/(20\d{2})[-_.]?(\d{2})[-_.]?(\d{2})/);
+    if (dateMatch) {
+      return { type: 'date', value: Number(`${dateMatch[1]}${dateMatch[2]}${dateMatch[3]}`) };
+    }
+
+    const numberMatch = suffix.match(/(?:^|[-_.\s])([0-9]+)(?:\D*)$/);
+    return { type: 'number', value: numberMatch ? Number(numberMatch[1]) : 0 };
+  };
+
+  return [...files].sort((first, second) => {
+    const firstVersion = getVersion(first);
+    const secondVersion = getVersion(second);
+    if (firstVersion.value !== secondVersion.value) {
+      return secondVersion.value - firstVersion.value;
+    }
+    return new Date(second.modifiedTime || 0) - new Date(first.modifiedTime || 0);
+  })[0];
 }
 
 function initApp() {
@@ -404,11 +462,16 @@ function initApp() {
 
   closeDirectorySettings?.addEventListener('click', () => {
     if (hasValidDirectory()) {
+      directorySettingsOpen = false;
       updateDirectoryFlow();
     }
   });
 
   directoryInput?.addEventListener('input', () => {
+    setDirectoryStatus(false);
+  });
+
+  trainingFilePrefixInput?.addEventListener('input', () => {
     setDirectoryStatus(false);
   });
 
@@ -441,7 +504,11 @@ function initApp() {
   document.getElementById('logout-btn').addEventListener('click', () => {
     clearUser();
     directoryInput.value = '';
+    trainingFilePrefixInput.value = '';
     localStorage.removeItem(DIRECTORY_KEY);
+    localStorage.removeItem(DIRECTORY_STATUS_KEY);
+    localStorage.removeItem(TRAINING_PREFIX_KEY);
+    localStorage.removeItem(TRAINING_FILE_KEY);
     if (google && google.accounts && google.accounts.id) {
       google.accounts.id.disableAutoSelect();
     }
