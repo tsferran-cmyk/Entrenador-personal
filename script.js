@@ -114,7 +114,14 @@ function updateDirectoryFlow(openSettings = false) {
   const validDirectory = hasValidDirectory();
   directorySettingsAlert?.classList.toggle('hidden', validDirectory);
 
-  if (validDirectory && !openSettings) {
+  if (openSettings) {
+    directorySettings?.classList.remove('hidden');
+    quizPanel?.classList.add('hidden');
+    directorySettingsButton?.setAttribute('aria-expanded', 'true');
+    return;
+  }
+
+  if (validDirectory) {
     directorySettings?.classList.add('hidden');
     quizPanel?.classList.remove('hidden');
     directorySettingsButton?.setAttribute('aria-expanded', 'false');
@@ -236,6 +243,10 @@ function setupGoogleAuth() {
       if (accessToken) {
         setAccessStatus(true);
         googleLoginHeader?.classList.add('hidden');
+        const savedDirectory = localStorage.getItem(DIRECTORY_KEY) || directoryInput?.value.trim();
+        if (savedDirectory) {
+          validateDriveDirectory(savedDirectory);
+        }
       }
     },
     error_callback: () => {
