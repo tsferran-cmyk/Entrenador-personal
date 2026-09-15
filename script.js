@@ -190,10 +190,12 @@ function createWorkoutPlan(formData) {
   const mode = formData.get('mode');
 
   if (mode === 'propio') {
+    const selectedTrainingFile = JSON.parse(localStorage.getItem(TRAINING_FILE_KEY) || 'null');
     return `
       <h3>Entrenament propi</h3>
       <p>Has seleccionat llegir el teu propi entrenament des del directori autoritzat.</p>
       <p><strong>Directori seleccionat:</strong> ${directoryInput.value.trim() || 'No definit'}</p>
+      <p><strong>Fitxer seleccionat:</strong> ${selectedTrainingFile?.name || 'No trobat'}</p>
       <p><strong>Accés:</strong> ${userStatus.textContent}</p>
     `;
   }
