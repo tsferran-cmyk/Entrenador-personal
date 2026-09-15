@@ -41,6 +41,7 @@ let currentExerciseIndex = 0;
 let workoutTotalSeconds = 1800;
 let catalogExercises = [];
 let workoutCriteria = null;
+let workoutSetupMessage = '';
 
 const trainingMap = {
   forca: {
@@ -288,7 +289,10 @@ async function createWorkoutExercises(formData) {
 
   try {
     const catalogFile = findCatalogFile();
-    if (!catalogFile) return createFallbackWorkoutExercises(formData);
+    if (!catalogFile) {
+      workoutSetupMessage = 'No s’ha trobat el catàleg. Comprova el nom i els permisos de Drive.';
+      return createFallbackWorkoutExercises(formData);
+    }
 
     const rows = await readSpreadsheetRows(catalogFile);
     const headers = rows.shift().map((header) => String(header).trim());
@@ -330,6 +334,7 @@ async function createWorkoutExercises(formData) {
     }));
   } catch (error) {
     console.warn('No s’ha pogut llegir el catàleg d’exercicis.', error);
+    workoutSetupMessage = `No s’ha pogut llegir el catàleg. ${error.message}`;
     return createFallbackWorkoutExercises(formData);
   }
 }
@@ -374,7 +379,7 @@ function findReplacementExercise(currentExercise) {
       ? String(exercise['Material requerit']).toLocaleLowerCase() === 'cap'
       : true);
   });
-  return chooseDailyExercises(candidates, 1)[0] || null;
+  return candidates.find((exercise) => !workoutExercises.some((item) => item.id === exercise.ID)) || null;
 }
 
 function findCatalogFile() {
@@ -402,7 +407,7 @@ async function readSpreadsheetRows(file) {
     const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(fileId)}/values/${range}`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
-    if (!response.ok) throw new Error('No s’ha pogut llegir el Google Sheet del catàleg.');
+    if (!response.ok) throw new Error(`Google Sheets ha rebutjat la lectura (${response.status}).`);
     const data = await response.json();
     return data.values || [];
   }
@@ -410,7 +415,7 @@ async function readSpreadsheetRows(file) {
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
-  if (!response.ok) throw new Error('No s’ha pogut descarregar el fitxer Excel de Drive.');
+  if (!response.ok) throw new Error(`Drive ha rebutjat la descàrrega del catàleg (${response.status}).`);
   const workbook = XLSX.read(await response.arrayBuffer(), { type: 'array' });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
@@ -501,7 +506,16 @@ async function uploadSpreadsheet(fileName, content, fileId, parentId) {
     },
     body
   });
-  if (!response.ok) throw new Error('No s’ha pogut crear o actualitzar el log mensual de Drive.');
+  if (!response.ok) {
+    let details = '';
+    try {
+      const errorData = await response.json();
+      details = errorData.error?.message || '';
+    } catch {
+      details = response.statusText;
+    }
+    throw new Error(`Drive ha rebutjat el log (${response.status}). ${details}`);
+  }
   return response.json();
 }
 
@@ -536,11 +550,13 @@ function renderCurrentExercise() {
 }
 
 async function startWorkout(formData) {
+  workoutSetupMessage = '';
   workoutExercises = await createWorkoutExercises(formData);
   try {
     await ensureMonthlyTrainingLog(workoutExercises, formData);
   } catch (error) {
     console.warn('No s’ha pogut preparar el log mensual.', error);
+    workoutSetupMessage = `${workoutSetupMessage ? `${workoutSetupMessage} ` : ''}No s’ha pogut crear o actualitzar el log mensual. ${error.message}`;
   }
   currentExerciseIndex = 0;
   workoutTotalSeconds = Number(formData.get('duration') || 30) * 60;
@@ -554,6 +570,9 @@ async function startWorkout(formData) {
   appScreen.classList.add('workout-active');
   calendarPanel.classList.add('hidden');
   document.getElementById('workout-complete-notice').classList.add('hidden');
+  const setupNotice = document.getElementById('workout-setup-notice');
+  setupNotice.textContent = workoutSetupMessage;
+  setupNotice.classList.toggle('hidden', !workoutSetupMessage);
   document.getElementById('total-time').textContent = formatElapsedTime(workoutTotalSeconds);
   renderCurrentExercise();
 }
@@ -935,7 +954,9 @@ function initApp() {
       };
       renderCurrentExercise();
     } else {
-      advanceExercise();
+      const setupNotice = document.getElementById('workout-setup-notice');
+      setupNotice.textContent = 'No hi ha cap altre exercici del mateix tipus disponible. Et quedes en aquest exercici.';
+      setupNotice.classList.remove('hidden');
     }
   });
   document.getElementById('skip-exercise-button')?.addEventListener('click', () => skipExerciseDialog.showModal());
