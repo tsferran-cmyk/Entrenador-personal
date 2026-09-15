@@ -399,7 +399,7 @@ function initApp() {
 
   directoryInput?.addEventListener('input', () => {
     setDirectoryStatus(false);
-  }
+  });
 
   if (trainerForm) {
     trainerForm.addEventListener('submit', (event) => {
