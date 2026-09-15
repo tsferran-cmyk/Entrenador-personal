@@ -346,9 +346,85 @@ async function validateDriveDirectory(rawUrl) {
   }
 
   try {
-    const query = encodeURIComponent(`'${id}' in parents and trashed=false`);
+    const files = await collectDriveFiles(id);
+    const carpetes = files.filter((item) => item.mimeType === 'application/vnd.google-apps.folder').length;
+    const fitxers = files.filter((item) => item.mimeType !== 'application/vnd.google-apps.folder').length;
+    const prefix = trainingFilePrefixInput.value.trim() || 'entrenament';
+    const normalizedPrefix = prefix.toLocaleLowerCase();
+    const matchingFiles = files.filter((item) => (
+      item.mimeType !== 'application/vnd.google-apps.folder'
+      && item.name.toLocaleLowerCase().startsWith(normalizedPrefix)
+    ));
+    const selectedTrainingFile = selectLatestTrainingFile(matchingFiles, prefix);
+
+    if (selectedTrainingFile) {
+      localStorage.setItem(TRAINING_FILE_KEY, JSON.stringify(selectedTrainingFile));
+    } else {
+      localStorage.removeItem(TRAINING_FILE_KEY);
+    }
+
+    resultBox.innerHTML = `
+      <strong>Validació correcta.</strong><br />
+      <strong>ID:</strong> ${id}<br />
+      <strong>Fitxers:</strong> ${fitxers}<br />
+      <strong>Carpetes:</strong> ${carpetes}<br />
+      <strong>Fitxer d'entrenament:</strong> ${selectedTrainingFile?.name || `No s'ha trobat cap fitxer amb el prefix "${prefix}"`}<br />
+      ${selectedTrainingFile?.path ? `<strong>Ubicació:</strong> ${selectedTrainingFile.path}<br />` : ''}
+      <strong>Accés:</strong> autoritzat amb Google OAuth.
+    `;
+    setDirectoryStatus(true);
+    setAccessStatus(true);
+    updateDirectoryFlow();
+  } catch (error) {
+    resultBox.innerHTML = `
+      <strong>No s’ha pogut validar el directori.</strong><br />
+      Pot passar perquè el link no és accessible per aquest compte, perquè la carpeta no està compartida correctament o perquè falta autorització.
+      <small>Error ${error.status || ''}: ${error.message}</small>
+    `;
+    setDirectoryStatus(false);
+    updateDirectoryFlow(true);
+    if (error.status === 401) {
+      accessToken = null;
+      setAccessStatus(false);
+      googleLoginHeader?.classList.remove('hidden');
+    }
+  }
+}
+
+async function collectDriveFiles(rootId) {
+  const files = [];
+  const foldersToVisit = [{ id: rootId, path: '' }];
+  const visitedFolders = new Set();
+
+  while (foldersToVisit.length) {
+    const currentFolder = foldersToVisit.shift();
+    if (visitedFolders.has(currentFolder.id)) continue;
+    visitedFolders.add(currentFolder.id);
+
+    const children = await fetchDriveChildren(currentFolder.id);
+    for (const child of children) {
+      const childPath = currentFolder.path ? `${currentFolder.path}/${child.name}` : child.name;
+      const fileWithPath = { ...child, path: childPath };
+      files.push(fileWithPath);
+
+      if (child.mimeType === 'application/vnd.google-apps.folder') {
+        foldersToVisit.push({ id: child.id, path: childPath });
+      }
+    }
+  }
+
+  return files;
+}
+
+async function fetchDriveChildren(parentId) {
+  const children = [];
+  let pageToken = '';
+
+  do {
+    const query = encodeURIComponent(`'${parentId}' in parents and trashed=false`);
+    const tokenQuery = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,modifiedTime),nextPageToken&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,modifiedTime),nextPageToken&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true${tokenQuery}`,
       {
         method: 'GET',
         headers: {
@@ -372,47 +448,11 @@ async function validateDriveDirectory(rawUrl) {
     }
 
     const data = await response.json();
-    const files = data.files || [];
-    const carpetes = files.filter((item) => item.mimeType === 'application/vnd.google-apps.folder').length;
-    const fitxers = files.filter((item) => item.mimeType !== 'application/vnd.google-apps.folder').length;
-    const prefix = trainingFilePrefixInput.value.trim() || 'entrenament';
-    const matchingFiles = files.filter((item) => (
-      item.mimeType !== 'application/vnd.google-apps.folder'
-      && item.name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())
-    ));
-    const selectedTrainingFile = selectLatestTrainingFile(matchingFiles, prefix);
+    children.push(...(data.files || []));
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
 
-    if (selectedTrainingFile) {
-      localStorage.setItem(TRAINING_FILE_KEY, JSON.stringify(selectedTrainingFile));
-    } else {
-      localStorage.removeItem(TRAINING_FILE_KEY);
-    }
-
-    resultBox.innerHTML = `
-      <strong>Validació correcta.</strong><br />
-      <strong>ID:</strong> ${id}<br />
-      <strong>Fitxers:</strong> ${fitxers}<br />
-      <strong>Carpetes:</strong> ${carpetes}<br />
-      <strong>Fitxer d'entrenament:</strong> ${selectedTrainingFile?.name || `No s'ha trobat cap fitxer amb el prefix "${prefix}"`}<br />
-      <strong>Accés:</strong> autoritzat amb Google OAuth.
-    `;
-    setDirectoryStatus(true);
-    setAccessStatus(true);
-    updateDirectoryFlow();
-  } catch (error) {
-    resultBox.innerHTML = `
-      <strong>No s’ha pogut validar el directori.</strong><br />
-      Pot passar perquè el link no és accessible per aquest compte, perquè la carpeta no està compartida correctament o perquè falta autorització.
-      <small>Error ${error.status || ''}: ${error.message}</small>
-    `;
-    setDirectoryStatus(false);
-    updateDirectoryFlow(true);
-    if (error.status === 401) {
-      accessToken = null;
-      setAccessStatus(false);
-      googleLoginHeader?.classList.remove('hidden');
-    }
-  }
+  return children;
 }
 
 function selectLatestTrainingFile(files, prefix) {
