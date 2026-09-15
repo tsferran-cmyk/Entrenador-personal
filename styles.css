@@ -210,6 +210,10 @@ h2, h3 {
   border-radius: 20px;
 }
 
+.workout-active .topbar {
+  display: none;
+}
+
 .button {
   border: none;
   border-radius: 14px;
@@ -399,6 +403,21 @@ select:focus {
   padding: 4px 2px;
 }
 
+.section-header-with-action {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-header-with-action .section-header {
+  margin-bottom: 0;
+}
+
+.workout-kicker {
+  margin: 0 2px -4px;
+}
+
 .workout-header h3 {
   font-size: clamp(1.4rem, 6vw, 2rem);
 }
@@ -447,16 +466,26 @@ select:focus {
 }
 
 .exercise-video {
-  aspect-ratio: 16 / 9;
-  display: grid;
-  place-items: center;
-  align-content: center;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
   border-radius: 16px;
   background: linear-gradient(135deg, rgba(126, 240, 168, 0.12), rgba(110, 174, 248, 0.12));
   border: 1px solid var(--line);
   color: var(--text);
   font-weight: 700;
+}
+
+.exercise-video a {
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.exercise-video a:hover {
+  text-decoration: underline;
 }
 
 .exercise-video small {

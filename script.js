@@ -25,6 +25,7 @@ const workoutScreen = document.getElementById('workout-screen');
 const calendarPanel = document.getElementById('calendar-panel');
 const exerciseDialog = document.getElementById('exercise-dialog');
 const finishDialog = document.getElementById('finish-dialog');
+const emptyExerciseDialog = document.getElementById('empty-exercise-dialog');
 const proposedFields = document.getElementById('proposed-fields');
 
 let accessToken = null;
@@ -274,8 +275,8 @@ function renderCurrentExercise() {
 
   const video = document.getElementById('exercise-video');
   video.innerHTML = exercise.videoUrl
-    ? `<iframe src="${exercise.videoUrl}" title="Vídeo de ${exercise.nameCa}" allowfullscreen></iframe>`
-    : '<span>Vídeo de l’exercici</span><small>El vídeo apareixerà quan el catàleg el proporcioni</small>';
+    ? `<span>Vídeo de l'exercici</span><a href="${exercise.videoUrl}" target="_blank" rel="noopener">Obrir vídeo</a>`
+    : '<span>Vídeo de l’exercici</span><small>Enllaç pendent del catàleg</small>';
 }
 
 function startWorkout(formData) {
@@ -289,6 +290,7 @@ function startWorkout(formData) {
   }, 1000);
   quizPanel.classList.add('hidden');
   workoutScreen.classList.remove('hidden');
+  appScreen.classList.add('workout-active');
   calendarPanel.classList.add('hidden');
   document.getElementById('workout-complete-notice').classList.add('hidden');
   document.getElementById('total-time').textContent = formatElapsedTime(workoutTotalSeconds);
@@ -300,8 +302,19 @@ function finishWorkout(completed = false) {
   workoutTimer = null;
   workoutScreen.classList.add('hidden');
   quizPanel.classList.remove('hidden');
+  appScreen.classList.remove('workout-active');
   document.getElementById('workout-complete-notice').classList.toggle('hidden', !completed);
   currentExerciseIndex = 0;
+}
+
+function advanceExercise() {
+  if (currentExerciseIndex >= workoutExercises.length - 1) {
+    finishWorkout(true);
+    return;
+  }
+
+  currentExerciseIndex += 1;
+  renderCurrentExercise();
 }
 
 function extractGoogleId(value) {
@@ -615,12 +628,19 @@ function initApp() {
   document.getElementById('exercise-log-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     exerciseDialog.close();
-    if (currentExerciseIndex >= workoutExercises.length - 1) {
-      finishWorkout(true);
+    const hasLoggedData = ['completed-reps', 'completed-weight', 'completed-discomfort']
+      .some((id) => document.getElementById(id).value.trim());
+    if (!hasLoggedData) {
+      emptyExerciseDialog.showModal();
       return;
     }
-    currentExerciseIndex += 1;
-    renderCurrentExercise();
+    advanceExercise();
+  });
+  document.getElementById('cancel-empty-exercise-button')?.addEventListener('click', () => emptyExerciseDialog.close());
+  document.getElementById('empty-exercise-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    emptyExerciseDialog.close();
+    advanceExercise();
   });
   document.getElementById('finish-workout-button')?.addEventListener('click', () => finishDialog.showModal());
   document.getElementById('cancel-finish-button')?.addEventListener('click', () => finishDialog.close());
@@ -629,13 +649,15 @@ function initApp() {
     finishDialog.close();
     finishWorkout();
   });
-  document.getElementById('calendar-button')?.addEventListener('click', () => {
+  const openCalendar = () => {
     calendarPanel.classList.remove('hidden');
+    quizPanel.classList.add('hidden');
     workoutScreen.classList.add('hidden');
-  });
+  };
+  document.getElementById('home-calendar-button')?.addEventListener('click', openCalendar);
   document.getElementById('close-calendar-button')?.addEventListener('click', () => {
     calendarPanel.classList.add('hidden');
-    workoutScreen.classList.remove('hidden');
+    quizPanel.classList.remove('hidden');
   });
 
   const savedUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
