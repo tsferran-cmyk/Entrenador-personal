@@ -16,7 +16,7 @@ Aplicació web per gestionar accés segur amb Google, carregar les dades d’un 
   - durada: 15, 30, 45 o 60 minuts
   - zona a treballar: part superior, core, inferior, full body o recuperació
 - Genera un entrenament automàtic
-- Llegeix el `Catàleg exercicis.xlsx` del directori configurat
+- Llegeix el catàleg d’exercicis en format Excel o Google Sheets
 - Crea o actualitza el log mensual `MM.AAAA - Log entrenament.xlsx`
 
 ## Important: arquitectura real a GitHub
@@ -51,7 +51,7 @@ Això permet que l’usuari faci login amb el seu compte i autoritzi només el s
 
 L’aplicació busca al directori configurat els fitxers que comencen per:
 
-- `Catàleg exercicis` — font dels exercicis proposats
+- `Catàleg exercicis` — font dels exercicis proposats, en `.xlsx` o Google Sheets
 - `Plantilla log entrenament` — plantilla del log mensual
 
 En generar un entrenament, necessita el permís OAuth de Drive per llegir el catàleg i crear o actualitzar el fitxer mensual.

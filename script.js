@@ -258,7 +258,7 @@ async function createWorkoutExercises(formData) {
     const catalogFile = findCatalogFile();
     if (!catalogFile) return createFallbackWorkoutExercises(formData);
 
-    const rows = await readSpreadsheetRows(catalogFile.id);
+    const rows = await readSpreadsheetRows(catalogFile);
     const headers = rows.shift().map((header) => String(header).trim());
     const exercises = rows
       .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])))
@@ -301,8 +301,29 @@ function findCatalogFile() {
     && file.name.toLocaleLowerCase().startsWith('catàleg exercicis'));
 }
 
-async function readSpreadsheetRows(fileId) {
+async function readSpreadsheetRows(file) {
+  const fileId = typeof file === 'string' ? file : file.id;
+  const mimeType = typeof file === 'string' ? '' : file.mimeType;
   if (!window.XLSX) throw new Error('La llibreria Excel encara no està disponible.');
+
+  if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+    const metadataResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(fileId)}?fields=sheets.properties.title`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!metadataResponse.ok) throw new Error('No s’ha pogut consultar el Google Sheet del catàleg.');
+    const metadata = await metadataResponse.json();
+    const sheetTitle = metadata.sheets?.[0]?.properties?.title;
+    if (!sheetTitle) throw new Error('El Google Sheet del catàleg no té cap pestanya llegible.');
+
+    const range = encodeURIComponent(`'${sheetTitle.replace(/'/g, "''")}'`);
+    const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(fileId)}/values/${range}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!response.ok) throw new Error('No s’ha pogut llegir el Google Sheet del catàleg.');
+    const data = await response.json();
+    return data.values || [];
+  }
+
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
@@ -326,7 +347,7 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
   const files = window.driveFiles || await collectDriveFiles(directoryId);
   const existingFile = files.find((file) => file.name === fileName);
   const templateFile = files.find((file) => file.name.toLocaleLowerCase().startsWith('plantilla log entrenament'));
-  const templateRows = templateFile ? await readSpreadsheetRows(templateFile.id) : [];
+  const templateRows = templateFile ? await readSpreadsheetRows(templateFile) : [];
   const headers = templateRows.shift() || [
     'Sessió ID', 'Data', 'Tipus entrenament', 'Material disponible', 'Ordre exercici',
     'Exercici ID', 'Exercici', 'Origen / motiu exercici', 'Objectiu correctiu', 'Sèrie',
@@ -334,7 +355,7 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
     'Esforç RPE (1–10)', 'Completat', 'Molèsties', 'Zona molèstia',
     'Intensitat molèstia (0–10)', 'Descripció molèstia / què ha passat', 'Adaptació feta', 'Observacions'
   ];
-  const rows = existingFile ? await readSpreadsheetRows(existingFile.id) : templateRows;
+  const rows = existingFile ? await readSpreadsheetRows(existingFile) : templateRows;
   const sessionId = `${now.toISOString().slice(0, 10)}-${Date.now()}`;
   const plannedRows = exercises.map((exercise, index) => {
     const values = {
@@ -499,7 +520,7 @@ function setupGoogleAuth() {
 
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/drive',
+    scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets.readonly',
     callback: (response) => {
       accessToken = response.access_token || null;
       if (accessToken) {
