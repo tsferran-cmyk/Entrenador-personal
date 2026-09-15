@@ -7,7 +7,7 @@ Aplicació web per gestionar accés segur amb Google, carregar les dades d’un 
 ## Què fa
 
 - Login mitjançant Google Identity Services
-- Accés a Google Sheets amb OAuth 2.0
+- Accés i escriptura de fitxers de Google Drive amb OAuth 2.0
 - Pregunta si vols:
   - accedir a un entrenament propi
   - o que la web et proposi un entrenament
@@ -16,6 +16,8 @@ Aplicació web per gestionar accés segur amb Google, carregar les dades d’un 
   - durada: 15, 30, 45 o 60 minuts
   - zona a treballar: part superior, core, inferior, full body o recuperació
 - Genera un entrenament automàtic
+- Llegeix el `Catàleg exercicis.xlsx` del directori configurat
+- Crea o actualitza el log mensual `MM.AAAA - Log entrenament.xlsx`
 
 ## Important: arquitectura real a GitHub
 
@@ -39,11 +41,20 @@ Això permet que l’usuari faci login amb el seu compte i autoritzi només el s
 
 1. Crea un projecte a Google Cloud Console
 2. Habilita l’API de Google Sheets
-3. Crea un OAuth Client ID de tipus Web
-4. Afegeix com a JavaScript origins:
+3. Habilita també la **Google Drive API**
+4. Crea un OAuth Client ID de tipus Web
+5. Afegeix com a JavaScript origins:
    - `http://localhost:8000`
    - `https://<el-teu-usuari>.github.io`
-5. Omple el valor de `GOOGLE_CLIENT_ID` a `config.js`
+6. Afegeix el compte de proves a la pantalla de consentiment OAuth
+7. Omple el valor de `GOOGLE_CLIENT_ID` a `config.js`
+
+L’aplicació busca al directori configurat els fitxers que comencen per:
+
+- `Catàleg exercicis` — font dels exercicis proposats
+- `Plantilla log entrenament` — plantilla del log mensual
+
+En generar un entrenament, necessita el permís OAuth de Drive per llegir el catàleg i crear o actualitzar el fitxer mensual.
 
 Exemple:
 

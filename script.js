@@ -229,7 +229,7 @@ function createWorkoutPlan(formData) {
   `;
 }
 
-function createWorkoutExercises(formData) {
+function createFallbackWorkoutExercises(formData) {
   const mode = formData.get('mode');
   const plan = trainingMap[formData.get('trainingType') || 'forca'];
   const blocks = mode === 'proposat' ? plan.blocks : ['Exercici propi recuperat del directori'];
@@ -247,6 +247,143 @@ function createWorkoutExercises(formData) {
     label: block,
     index
   }));
+}
+
+async function createWorkoutExercises(formData) {
+  if (formData.get('mode') !== 'proposat') {
+    return createFallbackWorkoutExercises(formData);
+  }
+
+  try {
+    const catalogFile = findCatalogFile();
+    if (!catalogFile) return createFallbackWorkoutExercises(formData);
+
+    const rows = await readSpreadsheetRows(catalogFile.id);
+    const headers = rows.shift().map((header) => String(header).trim());
+    const exercises = rows
+      .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])))
+      .filter((exercise) => String(exercise.Actiu).toLocaleLowerCase() === 'sí');
+    const trainingType = formData.get('trainingType') || 'forca';
+    const focus = focusMap[formData.get('focus') || 'fullbody'];
+    const selected = exercises.filter((exercise) => {
+      const modality = String(exercise.Modalitat).toLocaleLowerCase();
+      const zones = `${exercise['Zones principals']} ${exercise['Zones secundàries']}`.toLocaleLowerCase();
+      const typeMatches = trainingType === 'mobilitat'
+        ? modality.includes('mobilitat')
+        : trainingType === 'forcaMobilitat'
+          ? modality.includes('força') || modality.includes('mobilitat')
+          : modality.includes('força');
+      return typeMatches && (focus === 'full body' || zones.includes(focus.split(' ')[0]));
+    });
+    const source = (selected.length ? selected : exercises).slice(0, 5);
+
+    return source.map((exercise, index) => ({
+      type: exercise.Modalitat || 'Entrenament',
+      videoUrl: exercise['Enllaç vídeo'] || exercise['Vídeo'] || '',
+      nameCa: exercise['Nom CA'] || 'Exercici sense nom',
+      nameEn: exercise['Nom EN'] || 'Exercise without name',
+      sets: '', reps: '', weight: '',
+      equipment: exercise['Material requerit'] || 'Cap',
+      description: exercise['Instruccions CA'] || '',
+      label: exercise['Nom CA'] || `Exercici ${index + 1}`,
+      id: exercise.ID || ''
+    }));
+  } catch (error) {
+    console.warn('No s’ha pogut llegir el catàleg d’exercicis.', error);
+    return createFallbackWorkoutExercises(formData);
+  }
+}
+
+function findCatalogFile() {
+  const savedFile = JSON.parse(localStorage.getItem('fitflow-catalog-file') || 'null');
+  if (savedFile?.id) return savedFile;
+  return (window.driveFiles || []).find((file) => file.mimeType !== 'application/vnd.google-apps.folder'
+    && file.name.toLocaleLowerCase().startsWith('catàleg exercicis'));
+}
+
+async function readSpreadsheetRows(fileId) {
+  if (!window.XLSX) throw new Error('La llibreria Excel encara no està disponible.');
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!response.ok) throw new Error('No s’ha pogut descarregar el fitxer Excel de Drive.');
+  const workbook = XLSX.read(await response.arrayBuffer(), { type: 'array' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+    .filter((row, index) => index === 0 || row.some((cell) => String(cell).trim() !== ''));
+}
+
+async function ensureMonthlyTrainingLog(exercises, formData) {
+  if (!accessToken || !window.XLSX) return;
+
+  const directoryId = extractGoogleId(directoryInput.value.trim());
+  if (!directoryId) return;
+
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const fileName = `${month}.${year} - Log entrenament.xlsx`;
+  const files = window.driveFiles || await collectDriveFiles(directoryId);
+  const existingFile = files.find((file) => file.name === fileName);
+  const templateFile = files.find((file) => file.name.toLocaleLowerCase().startsWith('plantilla log entrenament'));
+  const templateRows = templateFile ? await readSpreadsheetRows(templateFile.id) : [];
+  const headers = templateRows.shift() || [
+    'Sessió ID', 'Data', 'Tipus entrenament', 'Material disponible', 'Ordre exercici',
+    'Exercici ID', 'Exercici', 'Origen / motiu exercici', 'Objectiu correctiu', 'Sèrie',
+    'Costat', 'Repeticions', 'Pes (kg)', 'Temps (s)', 'Distància (m)', 'Descans (s)',
+    'Esforç RPE (1–10)', 'Completat', 'Molèsties', 'Zona molèstia',
+    'Intensitat molèstia (0–10)', 'Descripció molèstia / què ha passat', 'Adaptació feta', 'Observacions'
+  ];
+  const rows = existingFile ? await readSpreadsheetRows(existingFile.id) : templateRows;
+  const sessionId = `${now.toISOString().slice(0, 10)}-${Date.now()}`;
+  const plannedRows = exercises.map((exercise, index) => {
+    const values = {
+      'Sessió ID': sessionId,
+      Data: now.toISOString().slice(0, 10),
+      'Tipus entrenament': formData.get('mode') === 'proposat' ? 'Proposat' : 'Propi',
+      'Ordre exercici': index + 1,
+      'Exercici ID': exercise.id || '',
+      Exercici: exercise.nameCa || '',
+      'Origen / motiu exercici': formData.get('mode') === 'proposat' ? 'Catàleg d’exercicis' : 'Fitxer propi',
+      Sèrie: 1,
+      Completat: 'No'
+    };
+    return headers.map((header) => values[header] ?? '');
+  });
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows, ...plannedRows]);
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Log entrenament');
+  const content = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const uploadedFile = await uploadSpreadsheet(fileName, content, existingFile?.id, directoryId);
+  workoutLogFile = uploadedFile;
+}
+
+async function uploadSpreadsheet(fileName, content, fileId, parentId) {
+  const boundary = `fitflow-${Date.now()}`;
+  const metadata = {
+    name: fileName,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  };
+  if (!fileId) metadata.parents = [parentId];
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
+    `--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`,
+    new Uint8Array(content),
+    `\r\n--${boundary}--`
+  ]);
+  const endpoint = fileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=multipart`
+    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+  const response = await fetch(endpoint, {
+    method: fileId ? 'PATCH' : 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`
+    },
+    body
+  });
+  if (!response.ok) throw new Error('No s’ha pogut crear o actualitzar el log mensual de Drive.');
+  return response.json();
 }
 
 function formatElapsedTime(seconds) {
@@ -279,8 +416,13 @@ function renderCurrentExercise() {
     : '<span>Vídeo de l’exercici</span><small>Enllaç pendent del catàleg</small>';
 }
 
-function startWorkout(formData) {
-  workoutExercises = createWorkoutExercises(formData);
+async function startWorkout(formData) {
+  workoutExercises = await createWorkoutExercises(formData);
+  try {
+    await ensureMonthlyTrainingLog(workoutExercises, formData);
+  } catch (error) {
+    console.warn('No s’ha pogut preparar el log mensual.', error);
+  }
   currentExerciseIndex = 0;
   workoutTotalSeconds = Number(formData.get('duration') || 30) * 60;
   workoutStartedAt = Date.now();
@@ -357,7 +499,7 @@ function setupGoogleAuth() {
 
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    scope: 'https://www.googleapis.com/auth/drive',
     callback: (response) => {
       accessToken = response.access_token || null;
       if (accessToken) {
@@ -511,6 +653,7 @@ async function collectDriveFiles(rootId) {
     }
   }
 
+  window.driveFiles = files;
   return files;
 }
 
