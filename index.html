@@ -131,67 +131,79 @@
 
             <div id="proposed-fields" class="hidden">
               <div class="question-group">
-                <label>Tipus d'entrenament</label>
-                <div class="option-grid three">
+                <label>Tens material?</label>
+                <div class="option-grid two">
                   <label class="option-card">
-                    <input type="radio" name="trainingType" value="forca" checked />
-                    <span>Força</span>
+                    <input type="radio" name="hasEquipment" value="si" />
+                    <span>Sí</span>
                   </label>
                   <label class="option-card">
-                    <input type="radio" name="trainingType" value="mobilitat" />
-                    <span>Mobilitat</span>
-                  </label>
-                  <label class="option-card">
-                    <input type="radio" name="trainingType" value="forcaMobilitat" />
-                    <span>Força + mobilitat</span>
+                    <input type="radio" name="hasEquipment" value="no" checked />
+                    <span>No</span>
                   </label>
                 </div>
               </div>
 
               <div class="question-group">
-                <label>Temps disponible</label>
+                <label>Quant de temps tens?</label>
+                <div class="option-grid four">
+                  <label class="option-card"><input type="radio" name="duration" value="15" /><span>15'</span></label>
+                  <label class="option-card"><input type="radio" name="duration" value="30" /><span>30'</span></label>
+                  <label class="option-card"><input type="radio" name="duration" value="45" /><span>45'</span></label>
+                  <label class="option-card"><input type="radio" name="duration" value="60" checked /><span>60'</span></label>
+                </div>
+              </div>
+
+              <div class="question-group">
+                <label>Tipus d'entrenament</label>
                 <div class="option-grid four">
                   <label class="option-card">
-                    <input type="radio" name="duration" value="15" />
-                    <span>15'</span>
-                  </label>
-                  <label class="option-card">
-                    <input type="radio" name="duration" value="30" checked />
-                    <span>30'</span>
-                  </label>
-                  <label class="option-card">
-                    <input type="radio" name="duration" value="45" />
-                    <span>45'</span>
-                  </label>
-                  <label class="option-card">
-                    <input type="radio" name="duration" value="60" />
-                    <span>60'</span>
-                  </label>
-                </div>
-              </div>
-
-              <div class="question-group">
-                <label>Zona a treballar</label>
-                <div class="option-grid five">
-                  <label class="option-card">
                     <input type="radio" name="focus" value="superior" />
-                    <span>Superior</span>
+                    <span>Tronc superior</span>
+                  </label>
+                  <label class="option-card">
+                    <input type="radio" name="focus" value="inferior" />
+                    <span>Tronc inferior</span>
                   </label>
                   <label class="option-card">
                     <input type="radio" name="focus" value="core" />
                     <span>Core</span>
                   </label>
+                  <label class="option-card"><input type="radio" name="focus" value="fullbody" checked /><span>Fullbody</span></label>
+                </div>
+              </div>
+
+              <div class="question-group">
+                <label>Tipus d'exercici</label>
+                <div class="option-grid three">
+                  <label class="option-card"><input type="radio" name="trainingType" value="forca" /><span>Força</span></label>
+                  <label class="option-card"><input type="radio" name="trainingType" value="mobilitat" /><span>Mobilitat</span></label>
+                  <label class="option-card"><input type="radio" name="trainingType" value="forcaMobilitat" checked /><span>Força + mobilitat</span></label>
+                </div>
+              </div>
+
+              <div class="question-group">
+                <label>Dolència a tractar?</label>
+                <div class="option-grid two">
+                  <label class="option-card"><input type="radio" name="hasPain" value="si" /><span>Sí</span></label>
+                  <label class="option-card"><input type="radio" name="hasPain" value="no" checked /><span>No</span></label>
+                </div>
+              </div>
+
+              <div id="pain-fields" class="question-group hidden">
+                <label>Zones a treballar</label>
+                <div id="catalog-zones" class="option-grid three">
                   <label class="option-card">
-                    <input type="radio" name="focus" value="inferior" />
-                    <span>Inferior</span>
+                    <input type="checkbox" name="painZone" value="superior" />
+                    <span>Tronc superior</span>
                   </label>
                   <label class="option-card">
-                    <input type="radio" name="focus" value="fullbody" checked />
-                    <span>Full body</span>
+                    <input type="checkbox" name="painZone" value="inferior" />
+                    <span>Tronc inferior</span>
                   </label>
                   <label class="option-card">
-                    <input type="radio" name="focus" value="recuperacio" />
-                    <span>Recuperació</span>
+                    <input type="checkbox" name="painZone" value="core" />
+                    <span>Core</span>
                   </label>
                 </div>
               </div>
@@ -243,6 +255,10 @@
               <div><span>Com fer-lo</span><p id="exercise-description">La descripció apareixerà quan el catàleg la proporcioni.</p></div>
             </div>
             <button id="complete-exercise-button" class="button primary full" type="button">Ja he fet l'exercici</button>
+            <div class="exercise-alternatives">
+              <button id="replace-exercise-button" class="button ghost" type="button">Proposa un altre exercici</button>
+              <button id="skip-exercise-button" class="button ghost" type="button">Saltar exercici</button>
+            </div>
           </article>
 
           <button id="finish-workout-button" class="button ghost full" type="button">Finalitzar entrenament</button>
@@ -294,6 +310,33 @@
             <div class="dialog-actions">
               <button id="cancel-empty-exercise-button" class="button ghost" type="button">Tornar</button>
               <button class="button primary" type="submit">Continuar</button>
+            </div>
+          </form>
+        </dialog>
+
+        <dialog id="replace-exercise-dialog" class="exercise-dialog">
+          <form id="replace-exercise-form" method="dialog">
+            <p class="eyebrow">Canviar exercici</p>
+            <h3>Per què el vols canviar?</h3>
+            <div class="option-grid two">
+              <label class="option-card"><input type="radio" name="replaceReason" value="molestia" checked /><span>Per molèstia</span></label>
+              <label class="option-card"><input type="radio" name="replaceReason" value="preferencia" /><span>En vull fer un altre</span></label>
+            </div>
+            <div class="dialog-actions">
+              <button id="cancel-replace-button" class="button ghost" type="button">Cancel·lar</button>
+              <button class="button primary" type="submit">Confirmar canvi</button>
+            </div>
+          </form>
+        </dialog>
+
+        <dialog id="skip-exercise-dialog" class="exercise-dialog">
+          <form id="skip-exercise-form" method="dialog">
+            <p class="eyebrow">Saltar exercici</p>
+            <h3>Vols saltar-lo?</h3>
+            <p class="dialog-copy">Aquest exercici quedarà marcat com a saltat i no se’n proposarà cap substitut.</p>
+            <div class="dialog-actions">
+              <button id="cancel-skip-button" class="button ghost" type="button">Continuar</button>
+              <button class="button primary" type="submit">Saltar exercici</button>
             </div>
           </form>
         </dialog>

@@ -26,7 +26,10 @@ const calendarPanel = document.getElementById('calendar-panel');
 const exerciseDialog = document.getElementById('exercise-dialog');
 const finishDialog = document.getElementById('finish-dialog');
 const emptyExerciseDialog = document.getElementById('empty-exercise-dialog');
+const replaceExerciseDialog = document.getElementById('replace-exercise-dialog');
+const skipExerciseDialog = document.getElementById('skip-exercise-dialog');
 const proposedFields = document.getElementById('proposed-fields');
+const painFields = document.getElementById('pain-fields');
 
 let accessToken = null;
 let tokenClient = null;
@@ -36,6 +39,8 @@ let workoutStartedAt = null;
 let workoutExercises = [];
 let currentExerciseIndex = 0;
 let workoutTotalSeconds = 1800;
+let catalogExercises = [];
+let workoutCriteria = null;
 
 const trainingMap = {
   forca: {
@@ -194,6 +199,33 @@ function saveDirectoryPreference() {
 function toggleModeFields() {
   const mode = document.querySelector('input[name="mode"]:checked')?.value || 'propio';
   proposedFields.classList.toggle('hidden', mode === 'propio');
+  if (mode === 'proposat') {
+    togglePainFields();
+  }
+}
+
+function togglePainFields() {
+  const hasPain = document.querySelector('input[name="hasPain"]:checked')?.value === 'si';
+  painFields?.classList.toggle('hidden', !hasPain);
+}
+
+function updateCatalogZones(exercises) {
+  const zones = new Set();
+  exercises.forEach((exercise) => {
+    `${exercise['Zones principals']};${exercise['Zones secundàries']}`
+      .split(';')
+      .map((zone) => zone.trim())
+      .filter(Boolean)
+      .forEach((zone) => zones.add(zone));
+  });
+  const zoneContainer = document.getElementById('catalog-zones');
+  if (!zoneContainer || !zones.size) return;
+  zoneContainer.innerHTML = [...zones].map((zone) => `
+    <label class="option-card">
+      <input type="checkbox" name="painZone" value="${zone.toLocaleLowerCase()}" />
+      <span>${zone}</span>
+    </label>
+  `).join('');
 }
 
 function createWorkoutPlan(formData) {
@@ -263,8 +295,13 @@ async function createWorkoutExercises(formData) {
     const exercises = rows
       .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])))
       .filter((exercise) => String(exercise.Actiu).toLocaleLowerCase() === 'sí');
+    catalogExercises = exercises;
+    updateCatalogZones(exercises);
     const trainingType = formData.get('trainingType') || 'forca';
     const focus = focusMap[formData.get('focus') || 'fullbody'];
+    const hasEquipment = formData.get('hasEquipment') === 'si';
+    const painZones = formData.getAll('painZone');
+    workoutCriteria = { trainingType, focus, hasEquipment, painZones };
     const selected = exercises.filter((exercise) => {
       const modality = String(exercise.Modalitat).toLocaleLowerCase();
       const zones = `${exercise['Zones principals']} ${exercise['Zones secundàries']}`.toLocaleLowerCase();
@@ -273,9 +310,12 @@ async function createWorkoutExercises(formData) {
         : trainingType === 'forcaMobilitat'
           ? modality.includes('força') || modality.includes('mobilitat')
           : modality.includes('força');
-      return typeMatches && (focus === 'full body' || zones.includes(focus.split(' ')[0]));
+      const focusMatches = focus === 'full body' || zones.includes(focus.split(' ')[0]);
+      const painMatches = !painZones.length || painZones.some((zone) => zones.includes(zone));
+      const equipmentMatches = hasEquipment || String(exercise['Material requerit']).toLocaleLowerCase() === 'cap';
+      return typeMatches && focusMatches && painMatches && equipmentMatches;
     });
-    const source = (selected.length ? selected : exercises).slice(0, 5);
+    const source = chooseDailyExercises(selected.length ? selected : exercises, 5);
 
     return source.map((exercise, index) => ({
       type: exercise.Modalitat || 'Entrenament',
@@ -292,6 +332,49 @@ async function createWorkoutExercises(formData) {
     console.warn('No s’ha pogut llegir el catàleg d’exercicis.', error);
     return createFallbackWorkoutExercises(formData);
   }
+}
+
+function isFavoriteExercise(exercise) {
+  const value = exercise['Agrada molt'] || exercise['Agrada molt?'] || exercise['Preferit'];
+  return ['sí', 'si', 'true', '1', 'molt'].includes(String(value).trim().toLocaleLowerCase());
+}
+
+function chooseDailyExercises(exercises, count) {
+  const state = JSON.parse(localStorage.getItem('fitflow-proposal-state') || '{"sessions":0,"recent":[]}');
+  const recentIds = new Set(state.recent || []);
+  const repeatSession = state.sessions % 2 === 1;
+  const ordered = [...exercises].sort((first, second) => {
+    const favoriteDifference = Number(isFavoriteExercise(second)) - Number(isFavoriteExercise(first));
+    if (favoriteDifference) return favoriteDifference;
+    if (repeatSession) {
+      return Number(recentIds.has(second.ID)) - Number(recentIds.has(first.ID));
+    }
+    return Number(recentIds.has(first.ID)) - Number(recentIds.has(second.ID));
+  });
+  const selected = ordered.slice(0, count);
+  localStorage.setItem('fitflow-proposal-state', JSON.stringify({
+    sessions: state.sessions + 1,
+    recent: selected.map((exercise) => exercise.ID).filter(Boolean)
+  }));
+  return selected;
+}
+
+function findReplacementExercise(currentExercise) {
+  if (!workoutCriteria || !catalogExercises.length) return null;
+  const currentId = currentExercise.id;
+  const candidates = catalogExercises.filter((exercise) => {
+    if (exercise.ID === currentId) return false;
+    const modality = String(exercise.Modalitat).toLocaleLowerCase();
+    const typeMatches = workoutCriteria.trainingType === 'mobilitat'
+      ? modality.includes('mobilitat')
+      : workoutCriteria.trainingType === 'forcaMobilitat'
+        ? modality.includes('força') || modality.includes('mobilitat')
+        : modality.includes('força');
+    return typeMatches && (!workoutCriteria.hasEquipment
+      ? String(exercise['Material requerit']).toLocaleLowerCase() === 'cap'
+      : true);
+  });
+  return chooseDailyExercises(candidates, 1)[0] || null;
 }
 
 function findCatalogFile() {
@@ -367,7 +450,8 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
       Exercici: exercise.nameCa || '',
       'Origen / motiu exercici': formData.get('mode') === 'proposat' ? 'Catàleg d’exercicis' : 'Fitxer propi',
       Sèrie: 1,
-      Completat: 'No'
+      Completat: exercise.status === 'Saltat' ? 'Saltat' : 'No',
+      Observacions: exercise.discardReason ? `Descartat: ${exercise.discardReason}` : ''
     };
     return headers.map((header) => values[header] ?? '');
   });
@@ -787,6 +871,13 @@ function initApp() {
     });
   }
 
+  document.querySelectorAll('input[name="mode"]').forEach((input) => {
+    input.addEventListener('change', toggleModeFields);
+  });
+  document.querySelectorAll('input[name="hasPain"]').forEach((input) => {
+    input.addEventListener('change', togglePainFields);
+  });
+
   document.getElementById('complete-exercise-button')?.addEventListener('click', () => exerciseDialog.showModal());
   document.getElementById('cancel-exercise-button')?.addEventListener('click', () => exerciseDialog.close());
   document.getElementById('exercise-log-form')?.addEventListener('submit', (event) => {
@@ -804,6 +895,41 @@ function initApp() {
   document.getElementById('empty-exercise-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     emptyExerciseDialog.close();
+    advanceExercise();
+  });
+  document.getElementById('replace-exercise-button')?.addEventListener('click', () => replaceExerciseDialog.showModal());
+  document.getElementById('cancel-replace-button')?.addEventListener('click', () => replaceExerciseDialog.close());
+  document.getElementById('replace-exercise-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const currentExercise = workoutExercises[currentExerciseIndex];
+    const reason = new FormData(event.currentTarget).get('replaceReason');
+    const replacement = findReplacementExercise(currentExercise);
+    replaceExerciseDialog.close();
+    currentExercise.status = 'Descartat';
+    currentExercise.discardReason = reason;
+    if (replacement) {
+      workoutExercises[currentExerciseIndex] = {
+        type: replacement.Modalitat || currentExercise.type,
+        videoUrl: replacement['Enllaç vídeo'] || replacement['Vídeo'] || '',
+        nameCa: replacement['Nom CA'] || 'Exercici sense nom',
+        nameEn: replacement['Nom EN'] || 'Exercise without name',
+        sets: '', reps: '', weight: '',
+        equipment: replacement['Material requerit'] || 'Cap',
+        description: replacement['Instruccions CA'] || '',
+        id: replacement.ID || '',
+        status: 'Previst'
+      };
+      renderCurrentExercise();
+    } else {
+      advanceExercise();
+    }
+  });
+  document.getElementById('skip-exercise-button')?.addEventListener('click', () => skipExerciseDialog.showModal());
+  document.getElementById('cancel-skip-button')?.addEventListener('click', () => skipExerciseDialog.close());
+  document.getElementById('skip-exercise-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    workoutExercises[currentExerciseIndex].status = 'Saltat';
+    skipExerciseDialog.close();
     advanceExercise();
   });
   document.getElementById('finish-workout-button')?.addEventListener('click', () => finishDialog.showModal());
