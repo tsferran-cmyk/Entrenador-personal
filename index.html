@@ -103,6 +103,9 @@
         </section>
 
         <section id="quiz-panel" class="panel hidden">
+          <div id="workout-complete-notice" class="workout-complete-notice hidden" role="status">
+            Entrenament acabat. Bon treball!
+          </div>
           <div class="section-header">
             <p class="eyebrow">Qüestionari</p>
             <h3>Quin tipus d'entrenament vols fer?</h3>
@@ -195,13 +198,96 @@
           </form>
         </section>
 
-        <section id="result-panel" class="panel result-panel hidden">
-          <div class="section-header">
-            <p class="eyebrow">Resultat</p>
-            <h3>Entrenament</h3>
+        <section id="workout-screen" class="workout-screen hidden" aria-live="polite">
+          <div class="workout-header">
+            <div>
+              <p class="eyebrow">Entrenament en curs</p>
+              <h3 id="workout-title">Entrenament</h3>
+            </div>
+            <button id="calendar-button" class="icon-button" type="button" aria-label="Consultar calendari d'entrenaments" title="Calendari">▣</button>
           </div>
-          <div id="result-content" class="result-content"></div>
+
+          <div class="workout-progress panel">
+            <div class="progress-metric">
+              <span>Temps</span>
+              <strong><span id="elapsed-time">00:00</span> / <span id="total-time">30:00</span></strong>
+            </div>
+            <div class="progress-metric">
+              <span>Exercici</span>
+              <strong><span id="current-exercise-number">1</span> / <span id="total-exercises">1</span></strong>
+            </div>
+            <div class="progress-metric">
+              <span>Completat</span>
+              <strong id="workout-percent">0%</strong>
+            </div>
+            <div class="progress-track"><span id="workout-progress-bar"></span></div>
+          </div>
+
+          <article class="exercise-card panel">
+            <p id="exercise-type" class="eyebrow">Tipus d'exercici</p>
+            <div class="exercise-video" id="exercise-video">
+              <span>Vídeo de l'exercici</span>
+              <small>El vídeo apareixerà quan el catàleg el proporcioni</small>
+            </div>
+            <div class="exercise-heading">
+              <div>
+                <h4 id="exercise-name-ca">Nom de l'exercici</h4>
+                <p id="exercise-name-en">Exercise name</p>
+              </div>
+              <span id="exercise-step" class="exercise-step">1</span>
+            </div>
+            <div class="exercise-stats">
+              <div><span>Sèries</span><strong id="exercise-sets">-</strong></div>
+              <div><span>Repeticions</span><strong id="exercise-reps">-</strong></div>
+              <div><span>Pes esperat</span><strong id="exercise-weight">-</strong></div>
+            </div>
+            <div class="exercise-info-grid">
+              <div><span>Material necessari</span><p id="exercise-equipment">Encara no especificat</p></div>
+              <div><span>Com fer-lo</span><p id="exercise-description">La descripció apareixerà quan el catàleg la proporcioni.</p></div>
+            </div>
+            <button id="complete-exercise-button" class="button primary full" type="button">Ja he fet l'exercici</button>
+          </article>
+
+          <button id="finish-workout-button" class="button ghost full" type="button">Finalitzar entrenament</button>
         </section>
+
+        <section id="calendar-panel" class="panel calendar-panel hidden">
+          <div class="directory-settings-header">
+            <div class="section-header">
+              <p class="eyebrow">Calendari</p>
+              <h3>Dies entrenats</h3>
+            </div>
+            <button id="close-calendar-button" class="icon-button" type="button" aria-label="Tancar calendari" title="Tancar calendari">×</button>
+          </div>
+          <p class="calendar-placeholder">Aquí es mostraran els dies d'entrenament a partir dels fitxers recuperats.</p>
+          <div id="calendar-placeholder-grid" class="calendar-placeholder-grid"></div>
+        </section>
+
+        <dialog id="exercise-dialog" class="exercise-dialog">
+          <form id="exercise-log-form" method="dialog">
+            <p class="eyebrow">Registrar exercici</p>
+            <h3>Com ha anat?</h3>
+            <label>Repeticions fetes<input id="completed-reps" type="number" min="0" placeholder="-" /></label>
+            <label>Pes utilitzat<input id="completed-weight" type="text" placeholder="-" /></label>
+            <label>Molèsties<input id="completed-discomfort" type="text" placeholder="Cap / descriu-les" /></label>
+            <div class="dialog-actions">
+              <button id="cancel-exercise-button" class="button ghost" type="button">Cancel·lar</button>
+              <button class="button primary" type="submit">Confirmar i continuar</button>
+            </div>
+          </form>
+        </dialog>
+
+        <dialog id="finish-dialog" class="exercise-dialog">
+          <form id="finish-form" method="dialog">
+            <p class="eyebrow">Finalitzar</p>
+            <h3>Vols acabar l'entrenament?</h3>
+            <p class="dialog-copy">El progrés actual quedarà marcat com a entrenament finalitzat.</p>
+            <div class="dialog-actions">
+              <button id="cancel-finish-button" class="button ghost" type="button">Continuar</button>
+              <button class="button primary" type="submit">Finalitzar entrenament</button>
+            </div>
+          </form>
+        </dialog>
       </main>
     </div>
 

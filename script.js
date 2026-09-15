@@ -21,11 +21,20 @@ const directorySettingsAlert = document.getElementById('directory-settings-alert
 const directoryValidationResult = document.getElementById('directory-validation-result');
 const closeDirectorySettings = document.getElementById('close-directory-settings');
 const quizPanel = document.getElementById('quiz-panel');
+const workoutScreen = document.getElementById('workout-screen');
+const calendarPanel = document.getElementById('calendar-panel');
+const exerciseDialog = document.getElementById('exercise-dialog');
+const finishDialog = document.getElementById('finish-dialog');
 const proposedFields = document.getElementById('proposed-fields');
 
 let accessToken = null;
 let tokenClient = null;
 let directorySettingsOpen = false;
+let workoutTimer = null;
+let workoutStartedAt = null;
+let workoutExercises = [];
+let currentExerciseIndex = 0;
+let workoutTotalSeconds = 1800;
 
 const trainingMap = {
   forca: {
@@ -217,6 +226,82 @@ function createWorkoutPlan(formData) {
       <li>3-5 min de cooldown i estiraments finals.</li>
     </ul>
   `;
+}
+
+function createWorkoutExercises(formData) {
+  const mode = formData.get('mode');
+  const plan = trainingMap[formData.get('trainingType') || 'forca'];
+  const blocks = mode === 'proposat' ? plan.blocks : ['Exercici propi recuperat del directori'];
+
+  return blocks.map((block, index) => ({
+    type: mode === 'proposat' ? plan.label : 'Entrenament propi',
+    videoUrl: '',
+    nameCa: mode === 'proposat' ? block : 'Exercici del fitxer d’entrenament',
+    nameEn: 'Exercise from training file',
+    sets: '',
+    reps: '',
+    weight: '',
+    equipment: '',
+    description: '',
+    label: block,
+    index
+  }));
+}
+
+function formatElapsedTime(seconds) {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const remainingSeconds = (seconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${remainingSeconds}`;
+}
+
+function renderCurrentExercise() {
+  const exercise = workoutExercises[currentExerciseIndex];
+  if (!exercise) return;
+
+  document.getElementById('exercise-type').textContent = exercise.type;
+  document.getElementById('exercise-name-ca').textContent = exercise.nameCa || 'Nom de l’exercici pendent';
+  document.getElementById('exercise-name-en').textContent = exercise.nameEn || 'Exercise name pending';
+  document.getElementById('exercise-sets').textContent = exercise.sets || '-';
+  document.getElementById('exercise-reps').textContent = exercise.reps || '-';
+  document.getElementById('exercise-weight').textContent = exercise.weight || '-';
+  document.getElementById('exercise-equipment').textContent = exercise.equipment || 'Encara no especificat';
+  document.getElementById('exercise-description').textContent = exercise.description || 'La descripció apareixerà quan el catàleg la proporcioni.';
+  document.getElementById('exercise-step').textContent = currentExerciseIndex + 1;
+  document.getElementById('current-exercise-number').textContent = currentExerciseIndex + 1;
+  document.getElementById('total-exercises').textContent = workoutExercises.length;
+  document.getElementById('workout-percent').textContent = `${Math.round((currentExerciseIndex / workoutExercises.length) * 100)}%`;
+  document.getElementById('workout-progress-bar').style.width = `${(currentExerciseIndex / workoutExercises.length) * 100}%`;
+
+  const video = document.getElementById('exercise-video');
+  video.innerHTML = exercise.videoUrl
+    ? `<iframe src="${exercise.videoUrl}" title="Vídeo de ${exercise.nameCa}" allowfullscreen></iframe>`
+    : '<span>Vídeo de l’exercici</span><small>El vídeo apareixerà quan el catàleg el proporcioni</small>';
+}
+
+function startWorkout(formData) {
+  workoutExercises = createWorkoutExercises(formData);
+  currentExerciseIndex = 0;
+  workoutTotalSeconds = Number(formData.get('duration') || 30) * 60;
+  workoutStartedAt = Date.now();
+  clearInterval(workoutTimer);
+  workoutTimer = setInterval(() => {
+    document.getElementById('elapsed-time').textContent = formatElapsedTime(Math.floor((Date.now() - workoutStartedAt) / 1000));
+  }, 1000);
+  quizPanel.classList.add('hidden');
+  workoutScreen.classList.remove('hidden');
+  calendarPanel.classList.add('hidden');
+  document.getElementById('workout-complete-notice').classList.add('hidden');
+  document.getElementById('total-time').textContent = formatElapsedTime(workoutTotalSeconds);
+  renderCurrentExercise();
+}
+
+function finishWorkout(completed = false) {
+  clearInterval(workoutTimer);
+  workoutTimer = null;
+  workoutScreen.classList.add('hidden');
+  quizPanel.classList.remove('hidden');
+  document.getElementById('workout-complete-notice').classList.toggle('hidden', !completed);
+  currentExerciseIndex = 0;
 }
 
 function extractGoogleId(value) {
@@ -521,10 +606,37 @@ function initApp() {
     trainerForm.addEventListener('submit', (event) => {
       event.preventDefault();
       const formData = new FormData(event.currentTarget);
-      resultPanel.classList.remove('hidden');
-      resultContent.innerHTML = createWorkoutPlan(formData);
+      startWorkout(formData);
     });
   }
+
+  document.getElementById('complete-exercise-button')?.addEventListener('click', () => exerciseDialog.showModal());
+  document.getElementById('cancel-exercise-button')?.addEventListener('click', () => exerciseDialog.close());
+  document.getElementById('exercise-log-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    exerciseDialog.close();
+    if (currentExerciseIndex >= workoutExercises.length - 1) {
+      finishWorkout(true);
+      return;
+    }
+    currentExerciseIndex += 1;
+    renderCurrentExercise();
+  });
+  document.getElementById('finish-workout-button')?.addEventListener('click', () => finishDialog.showModal());
+  document.getElementById('cancel-finish-button')?.addEventListener('click', () => finishDialog.close());
+  document.getElementById('finish-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    finishDialog.close();
+    finishWorkout();
+  });
+  document.getElementById('calendar-button')?.addEventListener('click', () => {
+    calendarPanel.classList.remove('hidden');
+    workoutScreen.classList.add('hidden');
+  });
+  document.getElementById('close-calendar-button')?.addEventListener('click', () => {
+    calendarPanel.classList.add('hidden');
+    workoutScreen.classList.remove('hidden');
+  });
 
   const savedUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
   if (savedUser) {
