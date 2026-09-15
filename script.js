@@ -2,6 +2,7 @@ const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID.apps.
 const GOOGLE_API_KEY = window.GOOGLE_API_KEY || 'YOUR_GOOGLE_API_KEY';
 const USER_KEY = 'fitflow-user';
 const DIRECTORY_KEY = 'fitflow-directory';
+const DIRECTORY_STATUS_KEY = 'fitflow-directory-status';
 
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
@@ -11,6 +12,12 @@ const resultPanel = document.getElementById('result-panel');
 const resultContent = document.getElementById('result-content');
 const directoryInput = document.getElementById('directory-id');
 const rememberDirectory = document.getElementById('remember-directory');
+const directorySettings = document.getElementById('directory-settings');
+const directorySettingsButton = document.getElementById('directory-settings-button');
+const directorySettingsAlert = document.getElementById('directory-settings-alert');
+const directoryValidationResult = document.getElementById('directory-validation-result');
+const closeDirectorySettings = document.getElementById('close-directory-settings');
+const quizPanel = document.getElementById('quiz-panel');
 const proposedFields = document.getElementById('proposed-fields');
 
 let accessToken = null;
@@ -87,6 +94,40 @@ function clearUser() {
   showLogin();
 }
 
+function hasValidDirectory() {
+  return Boolean(directoryInput?.value.trim())
+    && localStorage.getItem(DIRECTORY_STATUS_KEY) === 'valid';
+}
+
+function setDirectoryStatus(isValid) {
+  if (isValid) {
+    localStorage.setItem(DIRECTORY_STATUS_KEY, 'valid');
+    directorySettingsAlert?.classList.add('hidden');
+    return;
+  }
+
+  localStorage.setItem(DIRECTORY_STATUS_KEY, 'invalid');
+  directorySettingsAlert?.classList.remove('hidden');
+}
+
+function updateDirectoryFlow(openSettings = false) {
+  const validDirectory = hasValidDirectory();
+  directorySettingsAlert?.classList.toggle('hidden', validDirectory);
+
+  if (validDirectory && !openSettings) {
+    directorySettings?.classList.add('hidden');
+    quizPanel?.classList.remove('hidden');
+    directorySettingsButton?.setAttribute('aria-expanded', 'false');
+    return;
+  }
+
+  directorySettings?.classList.remove('hidden');
+  directorySettingsButton?.setAttribute('aria-expanded', 'true');
+  if (!validDirectory) {
+    quizPanel?.classList.add('hidden');
+  }
+}
+
 function loadDirectoryPreference() {
   const saved = localStorage.getItem(DIRECTORY_KEY);
   if (saved) {
@@ -98,8 +139,9 @@ function loadDirectoryPreference() {
 function saveDirectoryPreference() {
   const directoryValue = directoryInput.value.trim();
   if (!directoryValue) {
-    resultContent.innerHTML = '<p>Si us plau, indica l’ID del full o carpeta de Google Drive.</p>';
-    resultPanel.classList.remove('hidden');
+    directoryValidationResult.innerHTML = '<strong>Falta el directori.</strong><br />Indica una URL o ID de Google Drive.';
+    setDirectoryStatus(false);
+    updateDirectoryFlow(true);
     return;
   }
 
@@ -109,8 +151,7 @@ function saveDirectoryPreference() {
     localStorage.removeItem(DIRECTORY_KEY);
   }
 
-  resultPanel.classList.add('hidden');
-  resultContent.innerHTML = '';
+  validateDriveDirectory(directoryValue);
 }
 
 function toggleModeFields() {
@@ -246,15 +287,18 @@ function handleCredentialResponse(response) {
   requestDriveAccess();
   showApp();
   loadDirectoryPreference();
+  updateDirectoryFlow();
 }
 
-async function validateSharedGoogleLink(rawUrl) {
-  const resultBox = document.getElementById('link-check-result');
+async function validateDriveDirectory(rawUrl) {
+  const resultBox = directoryValidationResult;
   const url = rawUrl.trim();
   const id = extractGoogleId(url);
 
   if (!url || !id) {
-    resultBox.innerHTML = '<strong>Link no vàlid.</strong> Introduïu un enllaç de Google Drive o Sheets vàlid.';
+    resultBox.innerHTML = '<strong>Directori no vàlid.</strong><br />Indica una URL o ID de Google Drive vàlid.';
+    setDirectoryStatus(false);
+    updateDirectoryFlow(true);
     return;
   }
 
@@ -263,7 +307,8 @@ async function validateSharedGoogleLink(rawUrl) {
       <strong>Primer has d’iniciar sessió amb Google.</strong><br />
       Necessitem autoritzar l’accés a Google Drive per poder llegir el directori o full compartit.
     `;
-    setAccessStatus(false);
+    setDirectoryStatus(false);
+    updateDirectoryFlow(true);
     return;
   }
 
@@ -305,13 +350,17 @@ async function validateSharedGoogleLink(rawUrl) {
       <strong>Carpetes:</strong> ${carpetes}<br />
       <strong>Accés:</strong> autoritzat amb Google OAuth.
     `;
+    setDirectoryStatus(true);
     setAccessStatus(true);
+    updateDirectoryFlow();
   } catch (error) {
     resultBox.innerHTML = `
       <strong>No s’ha pogut validar el directori.</strong><br />
       Pot passar perquè el link no és accessible per aquest compte, perquè la carpeta no està compartida correctament o perquè falta autorització.
       <small>Error ${error.status || ''}: ${error.message}</small>
     `;
+    setDirectoryStatus(false);
+    updateDirectoryFlow(true);
     if (error.status === 401) {
       accessToken = null;
       setAccessStatus(false);
@@ -322,8 +371,6 @@ async function validateSharedGoogleLink(rawUrl) {
 
 function initApp() {
   const directoryForm = document.getElementById('directory-form');
-  const linkCheckForm = document.getElementById('link-check-form');
-  const validateLinkBtn = document.getElementById('validate-link-btn');
   const trainerForm = document.getElementById('trainer-form');
 
   if (directoryForm) {
@@ -333,19 +380,25 @@ function initApp() {
     });
   }
 
-  if (linkCheckForm) {
-    linkCheckForm.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const sharedLink = document.getElementById('shared-link').value;
-      validateSharedGoogleLink(sharedLink);
-    });
-  }
+  directorySettingsButton?.addEventListener('click', () => {
+    if (directorySettings?.classList.contains('hidden')) {
+      updateDirectoryFlow(true);
+      return;
+    }
 
-  if (validateLinkBtn) {
-    validateLinkBtn.addEventListener('click', () => {
-      const sharedLink = document.getElementById('shared-link').value;
-      validateSharedGoogleLink(sharedLink);
-    });
+    if (hasValidDirectory()) {
+      updateDirectoryFlow();
+    }
+  });
+
+  closeDirectorySettings?.addEventListener('click', () => {
+    if (hasValidDirectory()) {
+      updateDirectoryFlow();
+    }
+  });
+
+  directoryInput?.addEventListener('input', () => {
+    setDirectoryStatus(false);
   }
 
   if (trainerForm) {
@@ -367,6 +420,7 @@ function initApp() {
 
   loadDirectoryPreference();
   toggleModeFields();
+  updateDirectoryFlow();
   setupGoogleAuth();
 
   if (savedUser) {

@@ -51,25 +51,31 @@
             </div>
           </div>
           <div class="topbar-actions">
+            <button id="directory-settings-button" class="settings-button" type="button" aria-label="Configurar directori de Google Drive" aria-expanded="false" title="Configurar directori de Google Drive">
+              <span aria-hidden="true">⚙</span>
+              <span id="directory-settings-alert" class="settings-alert hidden" aria-hidden="true">!</span>
+            </button>
             <div id="user-status" class="status-pill offline">No autenticat</div>
             <div id="google-login-header" class="google-login-button compact hidden" aria-label="Iniciar sessió amb Google"></div>
             <button id="logout-btn" class="button ghost" type="button">Tancar sessió</button>
           </div>
         </header>
 
-        <section class="panel panel-directory">
-          <div class="section-header">
-            <p class="eyebrow">Directori</p>
-            <h3>On es troben les teves dades d'entrenament?</h3>
+        <section id="directory-settings" class="panel directory-settings hidden">
+          <div class="directory-settings-header">
+            <div class="section-header">
+              <p class="eyebrow">Directori</p>
+              <h3>On es troben les teves dades d'entrenament?</h3>
+            </div>
+            <button id="close-directory-settings" class="icon-button" type="button" aria-label="Tancar configuració del directori" title="Tancar configuració">×</button>
           </div>
-
           <form id="directory-form" class="stack-form">
             <label>
-              ID del full o carpeta de Google Drive
+              URL o ID del full o carpeta de Google Drive
               <input
                 id="directory-id"
                 type="text"
-                placeholder="1AbCdEfGh..."
+                placeholder="https://drive.google.com/drive/folders/..."
                 autocomplete="off"
               />
             </label>
@@ -79,36 +85,14 @@
               <span>Recordar aquest directori al navegador</span>
             </label>
 
-            <button type="submit" class="button primary full">Guardar directori</button>
+            <button type="submit" class="button primary full">Validar i guardar directori</button>
           </form>
-        </section>
-
-        <section class="panel">
-          <div class="section-header">
-            <p class="eyebrow">Validació</p>
-            <h3>Comprovar un enllaç compartit de Google</h3>
-          </div>
-
-          <form id="link-check-form" class="stack-form">
-            <label>
-              Enllaç compartit de Drive o Sheets
-              <input
-                id="shared-link"
-                type="text"
-                placeholder="https://drive.google.com/drive/folders/..."
-                autocomplete="off"
-              />
-            </label>
-
-            <button id="validate-link-btn" type="button" class="button ghost full">Validar enllaç</button>
-          </form>
-
-          <div id="link-check-result" class="link-check-result">
-            Posa un enllaç compartit per veure si es pot llegir sense login i quants fitxers o carpetes conté.
+          <div id="directory-validation-result" class="link-check-result">
+            Indica una URL o ID de Google Drive per comprovar que podem llegir el directori.
           </div>
         </section>
 
-        <section id="quiz-panel" class="panel">
+        <section id="quiz-panel" class="panel hidden">
           <div class="section-header">
             <p class="eyebrow">Qüestionari</p>
             <h3>Quin tipus d'entrenament vols fer?</h3>
