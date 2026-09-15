@@ -430,6 +430,20 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
   const files = window.driveFiles || await collectDriveFiles(directoryId);
   const existingFile = files.find((file) => file.name === fileName);
   const templateFile = files.find((file) => file.name.toLocaleLowerCase().startsWith('plantilla log entrenament'));
+    const catalogFile = files.find((file) => file.mimeType !== 'application/vnd.google-apps.folder'
+      && file.name.toLocaleLowerCase().startsWith('catàleg exercicis'));
+    if (catalogFile) {
+      try {
+        const catalogRows = await readSpreadsheetRows(catalogFile);
+        const catalogHeaders = catalogRows.shift().map((header) => String(header).trim());
+        const catalog = catalogRows.map((row) => Object.fromEntries(
+          catalogHeaders.map((header, index) => [header, row[index] ?? ''])
+        ));
+        updateCatalogZones(catalog);
+      } catch (error) {
+        console.warn('No s’han pogut carregar les zones del catàleg.', error);
+      }
+    }
   const templateRows = templateFile ? await readSpreadsheetRows(templateFile) : [];
   const headers = templateRows.shift() || [
     'Sessió ID', 'Data', 'Tipus entrenament', 'Material disponible', 'Ordre exercici',
