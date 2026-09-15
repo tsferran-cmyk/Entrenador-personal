@@ -255,7 +255,6 @@ async function validateSharedGoogleLink(rawUrl) {
 
   if (!url || !id) {
     resultBox.innerHTML = '<strong>Link no vàlid.</strong> Introduïu un enllaç de Google Drive o Sheets vàlid.';
-    setAccessStatus(false);
     return;
   }
 
@@ -269,8 +268,9 @@ async function validateSharedGoogleLink(rawUrl) {
   }
 
   try {
+    const query = encodeURIComponent(`'${id}' in parents and trashed=false`);
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q='${id}' in parents and trashed=false&fields=files(id,name,mimeType),nextPageToken&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType),nextPageToken&supportsAllDrives=true&includeItemsFromAllDrives=true`,
       {
         method: 'GET',
         headers: {
@@ -280,7 +280,17 @@ async function validateSharedGoogleLink(rawUrl) {
     );
 
     if (!response.ok) {
-      throw new Error('No es pot llegir aquesta carpeta amb el compte actual. Comprova els permisos del Drive i que has autoritzat l’accés.');
+      let details = '';
+      try {
+        const errorData = await response.json();
+        details = errorData.error?.message || '';
+      } catch {
+        details = response.statusText;
+      }
+
+      const error = new Error(details || 'Google Drive ha rebutjat la petició.');
+      error.status = response.status;
+      throw error;
     }
 
     const data = await response.json();
@@ -300,9 +310,13 @@ async function validateSharedGoogleLink(rawUrl) {
     resultBox.innerHTML = `
       <strong>No s’ha pogut validar el directori.</strong><br />
       Pot passar perquè el link no és accessible per aquest compte, perquè la carpeta no està compartida correctament o perquè falta autorització.
-      <small>${error.message}</small>
+      <small>Error ${error.status || ''}: ${error.message}</small>
     `;
-    setAccessStatus(false);
+    if (error.status === 401) {
+      accessToken = null;
+      setAccessStatus(false);
+      googleLoginHeader?.classList.remove('hidden');
+    }
   }
 }
 
