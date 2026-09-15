@@ -172,13 +172,13 @@ function extractGoogleId(value) {
   return null;
 }
 
-function requestDriveAccess() {
+function requestDriveAccess(prompt = 'consent') {
   if (!tokenClient) {
     console.warn('Google token client no està preparat.');
     return;
   }
 
-  tokenClient.requestAccessToken({ prompt: 'consent' });
+  tokenClient.requestAccessToken({ prompt });
 }
 
 function setupGoogleAuth() {
@@ -195,6 +195,10 @@ function setupGoogleAuth() {
       if (accessToken) {
         setAccessStatus(true);
       }
+    },
+    error_callback: () => {
+      accessToken = null;
+      setAccessStatus(false);
     }
   });
 
@@ -348,6 +352,10 @@ function initApp() {
   loadDirectoryPreference();
   toggleModeFields();
   setupGoogleAuth();
+
+  if (savedUser) {
+    requestDriveAccess('');
+  }
 
   document.getElementById('logout-btn').addEventListener('click', () => {
     clearUser();
