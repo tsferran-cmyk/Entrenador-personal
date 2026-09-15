@@ -194,11 +194,13 @@ function setupGoogleAuth() {
       accessToken = response.access_token || null;
       if (accessToken) {
         setAccessStatus(true);
+        googleLoginHeader?.classList.add('hidden');
       }
     },
     error_callback: () => {
       accessToken = null;
       setAccessStatus(false);
+      googleLoginHeader?.classList.remove('hidden');
     }
   });
 
