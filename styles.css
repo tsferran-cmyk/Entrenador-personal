@@ -384,6 +384,7 @@ select:focus {
 .workout-screen {
   display: grid;
   gap: 16px;
+  position: relative;
 }
 
 .workout-complete-notice {
@@ -396,12 +397,27 @@ select:focus {
 }
 
 .workout-setup-notice {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
   padding: 12px 14px;
   border: 1px solid rgba(255, 206, 102, 0.45);
   border-radius: 12px;
   background: rgba(255, 206, 102, 0.1);
   color: #ffdc8a;
   line-height: 1.5;
+}
+
+.workout-setup-notice .icon-button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
 }
 
 .workout-header {
@@ -475,7 +491,8 @@ select:focus {
 }
 
 .exercise-video {
-  min-height: 70px;
+  min-height: 38px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -590,11 +607,54 @@ select:focus {
   line-height: 1.6;
 }
 
-.calendar-placeholder-grid {
-  min-height: 120px;
-  border: 1px dashed rgba(126, 240, 168, 0.4);
-  border-radius: 14px;
-  background: repeating-linear-gradient(90deg, transparent 0 13%, rgba(255, 255, 255, 0.04) 13.2% 13.5%);
+.calendar-navigation {
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.calendar-weekday,
+.calendar-day {
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+.calendar-weekday {
+  min-height: 22px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.calendar-day {
+  position: relative;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.calendar-day.today {
+  border-color: rgba(126, 240, 168, 0.75);
+}
+
+.calendar-day.trained::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--primary);
 }
 
 .exercise-dialog {

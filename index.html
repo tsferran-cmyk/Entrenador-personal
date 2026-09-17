@@ -223,7 +223,10 @@
 
         <section id="workout-screen" class="workout-screen hidden" aria-live="polite">
           <p class="eyebrow workout-kicker">Entrenament en curs</p>
-          <div id="workout-setup-notice" class="workout-setup-notice hidden" role="status"></div>
+          <div id="workout-setup-notice" class="workout-setup-notice hidden" role="status">
+            <span id="workout-setup-message"></span>
+            <button id="close-workout-setup-notice" class="icon-button" type="button" aria-label="Tancar avís" title="Tancar avís">×</button>
+          </div>
 
           <div class="workout-progress panel">
             <div class="progress-metric">
@@ -243,16 +246,16 @@
 
           <article class="exercise-card panel">
             <p id="exercise-type" class="eyebrow">Tipus d'exercici</p>
-            <div class="exercise-video" id="exercise-video">
-              <span>Vídeo de l'exercici</span>
-              <small>Enllaç pendent del catàleg</small>
-            </div>
             <div class="exercise-heading">
               <div>
                 <h4 id="exercise-name-ca">Nom de l'exercici</h4>
                 <p id="exercise-name-en">Exercise name</p>
               </div>
               <span id="exercise-step" class="exercise-step">1</span>
+            </div>
+            <div class="exercise-video" id="exercise-video">
+              <span>Vídeo</span>
+              <small>Enllaç pendent</small>
             </div>
             <div class="exercise-stats">
               <div><span>Sèries</span><strong id="exercise-sets">-</strong></div>
@@ -277,19 +280,23 @@
           <div class="directory-settings-header">
             <div class="section-header">
               <p class="eyebrow">Calendari</p>
-              <h3>Dies entrenats</h3>
+              <h3 id="calendar-title">Dies entrenats</h3>
             </div>
             <button id="close-calendar-button" class="icon-button" type="button" aria-label="Tancar calendari" title="Tancar calendari">×</button>
           </div>
-          <p class="calendar-placeholder">Aquí es mostraran els dies d'entrenament a partir dels fitxers recuperats.</p>
-          <div id="calendar-placeholder-grid" class="calendar-placeholder-grid"></div>
+          <div class="calendar-navigation">
+            <button id="calendar-previous-button" class="icon-button" type="button" aria-label="Mes anterior" title="Mes anterior">‹</button>
+            <strong id="calendar-month-label"></strong>
+            <button id="calendar-next-button" class="icon-button" type="button" aria-label="Mes següent" title="Mes següent">›</button>
+          </div>
+          <div id="calendar-grid" class="calendar-grid"></div>
         </section>
 
         <dialog id="exercise-dialog" class="exercise-dialog">
           <form id="exercise-log-form" method="dialog">
             <p class="eyebrow">Registrar exercici</p>
             <h3>Com ha anat?</h3>
-            <label>Repeticions fetes<input id="completed-reps" type="number" min="0" placeholder="-" /></label>
+            <label>Repeticions fetes<input id="completed-reps" type="text" placeholder="-" /></label>
             <label>Pes utilitzat<input id="completed-weight" type="text" placeholder="-" /></label>
             <label>Molèsties<input id="completed-discomfort" type="text" placeholder="Cap / descriu-les" /></label>
             <div class="dialog-actions">

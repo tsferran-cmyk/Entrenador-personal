@@ -6,6 +6,7 @@ const DIRECTORY_STATUS_KEY = 'fitflow-directory-status';
 const TRAINING_PREFIX_KEY = 'fitflow-training-prefix';
 const TRAINING_FILE_KEY = 'fitflow-training-file';
 const WORKOUT_STATE_KEY = 'fitflow-workout-in-progress';
+const CALENDAR_MONTH_KEY = 'fitflow-calendar-month';
 
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
@@ -40,10 +41,16 @@ let workoutTimer = null;
 let workoutStartedAt = null;
 let workoutExercises = [];
 let currentExerciseIndex = 0;
+let currentSeriesIndex = 0;
 let workoutTotalSeconds = 1800;
 let catalogExercises = [];
 let workoutCriteria = null;
 let workoutSetupMessage = '';
+let workoutLogFile = null;
+let workoutLogHeaders = [];
+let workoutSessionId = '';
+let workoutDay = '';
+let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
 const trainingMap = {
   forca: {
@@ -323,7 +330,51 @@ function getColumnValue(row, aliases) {
   return '';
 }
 
+function parseSeriesCount(value) {
+  const match = String(value || '').match(/\d+/);
+  return match ? Math.max(1, Number(match[0])) : 1;
+}
+
+function getExerciseSeries(exercise) {
+  return Math.max(1, Number(exercise.totalSeries || parseSeriesCount(exercise.sets)) || 1);
+}
+
+function getExerciseDay(exercise) {
+  const value = String(exercise.day || '').trim();
+  const match = value.match(/\d+/);
+  return match ? match[0] : value;
+}
+
+async function chooseNextOwnTrainingDay(availableDays) {
+  const orderedDays = [...availableDays].sort((first, second) => Number(first) - Number(second));
+  const directoryId = extractGoogleId(directoryInput.value.trim());
+  if (!directoryId) return orderedDays[0];
+  const files = window.driveFiles || [];
+  const now = new Date();
+  const monthFileName = `${String(now.getMonth() + 1).padStart(2, '0')}.${now.getFullYear()} - Log entrenament.xlsx`;
+  const logFile = files.find((file) => file.name === monthFileName);
+  if (!logFile) return orderedDays[0];
+  try {
+    const rows = await readSpreadsheetRows(logFile);
+    const headers = rows.shift()?.map((header) => String(header).trim()) || [];
+    const dayIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Dia entrenament'));
+    const typeIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Tipus entrenament'));
+    const completedIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Completat'));
+    const completedDays = rows
+      .filter((row) => String(row[typeIndex] || '').toLocaleLowerCase() === 'propi'
+        && ['sí', 'si', 'yes', 'completat'].includes(String(row[completedIndex] || '').toLocaleLowerCase()))
+      .map((row) => String(row[dayIndex] || '').trim())
+      .filter(Boolean);
+    const lastDay = completedDays.at(-1);
+    const lastIndex = orderedDays.indexOf(lastDay);
+    return orderedDays[(lastIndex + 1) % orderedDays.length] || orderedDays[0];
+  } catch {
+    return orderedDays[0];
+  }
+}
+
 async function createWorkoutExercises(formData) {
+  workoutDay = '';
   if (formData.get('mode') !== 'proposat') {
     const selectedTrainingFile = JSON.parse(localStorage.getItem(TRAINING_FILE_KEY) || 'null');
     if (!selectedTrainingFile?.id) {
@@ -339,15 +390,23 @@ async function createWorkoutExercises(formData) {
       if (!headers.some((header) => exerciseColumnAliases.some((alias) => normalizeColumnName(alias) === normalizeColumnName(header)))) {
         throw new Error(`No s’ha trobat cap columna d’exercici. Columnes detectades: ${headers.join(', ')}`);
       }
+      let activeDay = '';
       const exercises = rows
-        .map((row) => Object.fromEntries(headers.map((header, columnIndex) => [header, row[columnIndex] ?? ''])))
+        .map((row) => {
+          const exercise = Object.fromEntries(headers.map((header, columnIndex) => [header, row[columnIndex] ?? '']));
+          const rowDay = getColumnValue(exercise, ['Dia', 'Day', 'Dia entrenament', 'Dia d’entrenament']);
+          if (String(rowDay).trim()) activeDay = rowDay;
+          return { ...exercise, Dia: activeDay };
+        })
         .filter((exercise) => getColumnValue(exercise, ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Nom']))
         .map((exercise, index) => ({
+          day: getColumnValue(exercise, ['Dia', 'Day', 'Dia entrenament', 'Dia d’entrenament']),
           type: getColumnValue(exercise, ['Tipus', 'Modalitat', 'Type']) || 'Entrenament propi',
           videoUrl: getColumnValue(exercise, ['Enllaç vídeo', 'Enllaç video', 'Vídeo', 'Video', 'Video URL']),
           nameCa: getColumnValue(exercise, ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Exercici CA', 'Nom', 'Exercise']) || `Exercici ${index + 1}`,
           nameEn: getColumnValue(exercise, ['Nom EN', 'Name', 'English name']) || 'Exercise from training file',
           sets: getColumnValue(exercise, ['Sèries', 'Series', 'Sets']),
+          totalSeries: parseSeriesCount(getColumnValue(exercise, ['Sèries', 'Series', 'Sets'])),
           reps: getColumnValue(exercise, ['Repeticions', 'Reps', 'Repetitions']),
           weight: getColumnValue(exercise, ['Pes', 'Pes (kg)', 'Weight', 'Expected weight']),
           equipment: getColumnValue(exercise, ['Material', 'Material requerit', 'Equipment']) || 'Encara no especificat',
@@ -357,6 +416,14 @@ async function createWorkoutExercises(formData) {
           source: 'propi'
         }));
       if (!exercises.length) throw new Error('El fitxer d’entrenament no conté cap exercici vàlid.');
+      const availableDays = [...new Set(exercises.map(getExerciseDay).filter(Boolean))];
+      if (availableDays.length) {
+        workoutDay = await chooseNextOwnTrainingDay(availableDays);
+        const selectedExercises = exercises.filter((exercise) => getExerciseDay(exercise) === workoutDay);
+        if (!selectedExercises.length) throw new Error(`No hi ha exercicis per al dia ${workoutDay}.`);
+        return selectedExercises;
+      }
+      workoutDay = '';
       return exercises;
     } catch (error) {
       workoutSetupMessage = `No s’ha pogut obrir l’entrenament propi. ${error.message}`;
@@ -368,7 +435,7 @@ async function createWorkoutExercises(formData) {
     const catalogFile = findCatalogFile();
     if (!catalogFile) {
       workoutSetupMessage = 'No s’ha trobat el catàleg. Comprova el nom i els permisos de Drive.';
-      return createFallbackWorkoutExercises(formData);
+      return [];
     }
 
     const rows = await readSpreadsheetRows(catalogFile);
@@ -413,7 +480,7 @@ async function createWorkoutExercises(formData) {
   } catch (error) {
     console.warn('No s’ha pogut llegir el catàleg d’exercicis.', error);
     workoutSetupMessage = `No s’ha pogut llegir el catàleg. ${error.message}`;
-    return createFallbackWorkoutExercises(formData);
+    return [];
   }
 }
 
@@ -503,7 +570,7 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const year = now.getFullYear();
   const fileName = `${month}.${year} - Log entrenament.xlsx`;
-  const files = window.driveFiles || await collectDriveFiles(directoryId);
+  const files = await collectDriveFiles(directoryId);
   const existingFile = files.find((file) => file.name === fileName);
   const templateFile = files.find((file) => file.name.toLocaleLowerCase().startsWith('plantilla log entrenament'));
   if (formData.get('mode') === 'proposat') {
@@ -522,37 +589,74 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
       }
     }
   }
-  const templateRows = templateFile ? await readSpreadsheetRows(templateFile) : [];
-  const headers = templateRows.shift() || [
-    'Sessió ID', 'Data', 'Tipus entrenament', 'Material disponible', 'Ordre exercici',
+  const defaultHeaders = [
+    'Sessió ID', 'Data', 'Dia entrenament', 'Tipus entrenament', 'Material disponible', 'Ordre exercici',
     'Exercici ID', 'Exercici', 'Origen / motiu exercici', 'Objectiu correctiu', 'Sèrie',
     'Costat', 'Repeticions', 'Pes (kg)', 'Temps (s)', 'Distància (m)', 'Descans (s)',
     'Esforç RPE (1–10)', 'Completat', 'Molèsties', 'Zona molèstia',
     'Intensitat molèstia (0–10)', 'Descripció molèstia / què ha passat', 'Adaptació feta', 'Observacions'
   ];
-  const rows = existingFile ? await readSpreadsheetRows(existingFile) : templateRows;
-  const sessionId = `${now.toISOString().slice(0, 10)}-${Date.now()}`;
-  const plannedRows = exercises.map((exercise, index) => {
-    const values = {
-      'Sessió ID': sessionId,
-      Data: now.toISOString().slice(0, 10),
-      'Tipus entrenament': formData.get('mode') === 'proposat' ? 'Proposat' : 'Propi',
-      'Ordre exercici': index + 1,
-      'Exercici ID': exercise.id || '',
-      Exercici: exercise.nameCa || '',
-      'Origen / motiu exercici': formData.get('mode') === 'proposat' ? 'Catàleg d’exercicis' : 'Fitxer propi',
-      Sèrie: 1,
-      Completat: exercise.status === 'Saltat' ? 'Saltat' : 'No',
-      Observacions: exercise.discardReason ? `Descartat: ${exercise.discardReason}` : ''
-    };
-    return headers.map((header) => values[header] ?? '');
+  let headers;
+  if (existingFile) {
+    const rows = await readSpreadsheetRows(existingFile);
+    headers = rows.shift()?.map((header) => String(header).trim()) || defaultHeaders;
+  } else {
+    const templateRows = templateFile ? await readSpreadsheetRows(templateFile) : [];
+    headers = templateRows.shift()?.map((header) => String(header).trim()) || defaultHeaders;
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers]), 'Log entrenament');
+    const content = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    workoutLogFile = await uploadSpreadsheet(fileName, content, null, directoryId);
+    window.driveFiles = [...files, workoutLogFile];
+  }
+  workoutLogFile = workoutLogFile || existingFile;
+  workoutLogHeaders = headers;
+  workoutSessionId = `${now.toISOString().slice(0, 10)}-${Date.now()}`;
+}
+
+function logValue(headers, values, aliases) {
+  const header = headers.find((item) => aliases.some((alias) => normalizeColumnName(alias) === normalizeColumnName(item)));
+  return header ? values[header] ?? '' : '';
+}
+
+async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
+  if (!workoutLogFile || !workoutLogHeaders.length || !accessToken) return;
+  const rows = await readSpreadsheetRows(workoutLogFile);
+  const headers = rows.shift()?.map((header) => String(header).trim()) || workoutLogHeaders;
+  const values = {
+    'Sessió ID': workoutSessionId,
+    Data: new Date().toISOString().slice(0, 10),
+    'Dia entrenament': workoutDay,
+    Dia: workoutDay,
+    'Tipus entrenament': exercise.source === 'catalog' ? 'Proposat' : 'Propi',
+    'Ordre exercici': currentExerciseIndex + 1,
+    'Exercici ID': exercise.id || '',
+    Exercici: exercise.nameCa || '',
+    'Origen / motiu exercici': exercise.source === 'catalog' ? 'Catàleg d’exercicis' : 'Fitxer propi',
+    Sèrie: `${setNumber}/${getExerciseSeries(exercise)}`,
+    Repeticions: data.reps || exercise.reps || '',
+    'Pes (kg)': data.weight || exercise.weight || '',
+    Completat: completed ? 'Sí' : 'No',
+    Molèsties: data.discomfort || '',
+    Observacions: data.notes || ''
+  };
+  const row = headers.map((header) => {
+    const normalized = normalizeColumnName(header);
+    if (['dia', 'diaentrenament'].includes(normalized)) return workoutDay;
+    if (normalized === 'tipus') return values['Tipus entrenament'];
+    if (normalized === 'exercici') return values.Exercici;
+    if (['series', 'serie'].includes(normalized)) return values.Sèrie;
+    if (normalized === 'repeticions' || normalized === 'reps') return values.Repeticions;
+    if (normalized === 'pes' || normalized === 'peskg') return values['Pes (kg)'];
+    if (normalized === 'observacions') return values.Observacions;
+    return values[header] ?? '';
   });
   const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows, ...plannedRows]);
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Log entrenament');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, ...rows, row]), 'Log entrenament');
   const content = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-  const uploadedFile = await uploadSpreadsheet(fileName, content, existingFile?.id, directoryId);
-  workoutLogFile = uploadedFile;
+  const uploadedFile = await uploadSpreadsheet(workoutLogFile.name, content, workoutLogFile.id, extractGoogleId(directoryInput.value.trim()));
+  workoutLogFile = { ...workoutLogFile, ...uploadedFile };
+  window.driveFiles = (window.driveFiles || []).map((file) => file.id === workoutLogFile.id ? workoutLogFile : file);
 }
 
 async function uploadSpreadsheet(fileName, content, fileId, parentId) {
@@ -612,6 +716,8 @@ function saveWorkoutState() {
     date: getLocalDateKey(),
     exercises: workoutExercises,
     currentExerciseIndex,
+    currentSeriesIndex,
+    workoutDay,
     totalSeconds: workoutTotalSeconds,
     startedAt: workoutStartedAt
   }));
@@ -635,11 +741,20 @@ function getPendingWorkoutState() {
   }
 }
 
-function resumeWorkout(state) {
+async function resumeWorkout(state) {
   workoutExercises = state.exercises;
   currentExerciseIndex = Math.min(Math.max(Number(state.currentExerciseIndex) || 0, 0), workoutExercises.length - 1);
+  currentSeriesIndex = Math.max(Number(state.currentSeriesIndex) || 0, 0);
+  workoutDay = state.workoutDay || '';
   workoutTotalSeconds = Number(state.totalSeconds) || 1800;
   workoutStartedAt = Number(state.startedAt) || Date.now();
+  const formData = new FormData();
+  formData.set('mode', workoutExercises[0]?.source === 'catalog' ? 'proposat' : 'propio');
+  try {
+    await ensureMonthlyTrainingLog(workoutExercises, formData);
+  } catch (error) {
+    workoutSetupMessage = `No s’ha pogut reprendre el log mensual. ${error.message}`;
+  }
   clearInterval(workoutTimer);
   workoutTimer = setInterval(() => {
     document.getElementById('elapsed-time').textContent = formatElapsedTime(Math.floor((Date.now() - workoutStartedAt) / 1000));
@@ -649,7 +764,8 @@ function resumeWorkout(state) {
   appScreen.classList.add('workout-active');
   calendarPanel.classList.add('hidden');
   document.getElementById('workout-complete-notice').classList.add('hidden');
-  document.getElementById('workout-setup-notice').classList.add('hidden');
+  document.getElementById('workout-setup-message').textContent = workoutSetupMessage;
+  document.getElementById('workout-setup-notice').classList.toggle('hidden', !workoutSetupMessage);
   document.getElementById('total-time').textContent = formatElapsedTime(workoutTotalSeconds);
   renderCurrentExercise();
 }
@@ -660,6 +776,60 @@ function offerWorkoutResume() {
   resumeWorkoutDialog.showModal();
 }
 
+function formatMonthLabel(date) {
+  return new Intl.DateTimeFormat('ca-ES', { month: 'long', year: 'numeric' }).format(date);
+}
+
+async function getTrainedDaysForMonth(date) {
+  const directoryId = extractGoogleId(directoryInput.value.trim());
+  if (!directoryId) return new Set();
+  const monthFileName = `${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()} - Log entrenament.xlsx`;
+  const files = await collectDriveFiles(directoryId);
+  const logFile = files.find((file) => file.name === monthFileName);
+  if (!logFile) return new Set();
+  const rows = await readSpreadsheetRows(logFile);
+  const headers = rows.shift()?.map((header) => String(header).trim()) || [];
+  const dateIndex = headers.findIndex((header) => ['data', 'dia'].includes(normalizeColumnName(header)));
+  const completedIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Completat'));
+  const days = new Set();
+  rows.forEach((row) => {
+    const completed = String(row[completedIndex] || '').toLocaleLowerCase();
+    if (!['sí', 'si', 'yes', 'completat'].includes(completed)) return;
+    const value = String(row[dateIndex] || '');
+    const isoMatch = value.match(/^\d{4}[-/]\d{1,2}[-/](\d{1,2})/);
+    const dayMatch = value.match(/^\d{1,2}$/);
+    if (isoMatch) days.add(Number(isoMatch[1]));
+    else if (dayMatch) days.add(Number(dayMatch[0]));
+  });
+  return days;
+}
+
+async function renderCalendar() {
+  const grid = document.getElementById('calendar-grid');
+  if (!grid) return;
+  document.getElementById('calendar-month-label').textContent = formatMonthLabel(calendarMonth);
+  grid.innerHTML = [...['Dl', 'Dt', 'Dc', 'Dj', 'Dv', 'Ds', 'Dg']]
+    .map((day) => `<div class="calendar-weekday">${day}</div>`).join('');
+  let trainedDays = new Set();
+  try {
+    trainedDays = await getTrainedDaysForMonth(calendarMonth);
+  } catch (error) {
+    console.warn('No s’han pogut carregar els dies entrenats.', error);
+  }
+  const firstDay = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+  const offset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate();
+  const todayKey = getLocalDateKey();
+  for (let index = 0; index < offset; index += 1) grid.insertAdjacentHTML('beforeend', '<div></div>');
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateKey = getLocalDateKey(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day));
+    const classes = ['calendar-day'];
+    if (dateKey === todayKey) classes.push('today');
+    if (trainedDays.has(day)) classes.push('trained');
+    grid.insertAdjacentHTML('beforeend', `<div class="${classes.join(' ')}">${day}</div>`);
+  }
+}
+
 function renderCurrentExercise() {
   const exercise = workoutExercises[currentExerciseIndex];
   if (!exercise) return;
@@ -667,7 +837,7 @@ function renderCurrentExercise() {
   document.getElementById('exercise-type').textContent = exercise.type;
   document.getElementById('exercise-name-ca').textContent = exercise.nameCa || 'Nom de l’exercici pendent';
   document.getElementById('exercise-name-en').textContent = exercise.nameEn || 'Exercise name pending';
-  document.getElementById('exercise-sets').textContent = exercise.sets || '-';
+  document.getElementById('exercise-sets').textContent = `${Math.min(currentSeriesIndex + 1, getExerciseSeries(exercise))}/${getExerciseSeries(exercise)}`;
   document.getElementById('exercise-reps').textContent = exercise.reps || '-';
   document.getElementById('exercise-weight').textContent = exercise.weight || '-';
   document.getElementById('exercise-equipment').textContent = exercise.equipment || 'Encara no especificat';
@@ -677,18 +847,25 @@ function renderCurrentExercise() {
   document.getElementById('total-exercises').textContent = workoutExercises.length;
   document.getElementById('workout-percent').textContent = `${Math.round((currentExerciseIndex / workoutExercises.length) * 100)}%`;
   document.getElementById('workout-progress-bar').style.width = `${(currentExerciseIndex / workoutExercises.length) * 100}%`;
+  document.getElementById('replace-exercise-button').classList.toggle('hidden', exercise.source === 'propi');
 
   const video = document.getElementById('exercise-video');
   const videoSourceLabel = exercise.source === 'propi' ? 'fitxer d’entrenament propi' : 'catàleg';
   video.innerHTML = exercise.videoUrl
-    ? `<span>Vídeo de l'exercici</span><a href="${exercise.videoUrl}" target="_blank" rel="noopener">Obrir vídeo</a>`
-    : `<span>Vídeo de l’exercici</span><small>Enllaç pendent del ${videoSourceLabel}</small>`;
+    ? `<span>Vídeo</span><a href="${exercise.videoUrl}" target="_blank" rel="noopener">Obrir</a>`
+    : `<span>Vídeo</span><small>Enllaç pendent del ${videoSourceLabel}</small>`;
+}
+
+function showWorkoutSetupError(message) {
+  const notice = document.getElementById('workout-setup-notice');
+  document.getElementById('workout-setup-message').textContent = message;
+  notice.classList.remove('hidden');
 }
 
 async function startWorkout(formData) {
   workoutSetupMessage = '';
   workoutExercises = await createWorkoutExercises(formData);
-  if (!workoutExercises.length && formData.get('mode') !== 'proposat') {
+  if (!workoutExercises.length) {
     const formError = document.getElementById('workout-form-error');
     formError.textContent = workoutSetupMessage || 'No s’ha pogut preparar l’entrenament propi.';
     formError.classList.remove('hidden');
@@ -704,6 +881,7 @@ async function startWorkout(formData) {
     workoutSetupMessage = `${workoutSetupMessage ? `${workoutSetupMessage} ` : ''}No s’ha pogut crear o actualitzar el log mensual. ${error.message}`;
   }
   currentExerciseIndex = 0;
+  currentSeriesIndex = 0;
   workoutTotalSeconds = Number(formData.get('duration') || 30) * 60;
   workoutStartedAt = Date.now();
   saveWorkoutState();
@@ -717,7 +895,7 @@ async function startWorkout(formData) {
   calendarPanel.classList.add('hidden');
   document.getElementById('workout-complete-notice').classList.add('hidden');
   const setupNotice = document.getElementById('workout-setup-notice');
-  setupNotice.textContent = workoutSetupMessage;
+  document.getElementById('workout-setup-message').textContent = workoutSetupMessage;
   setupNotice.classList.toggle('hidden', !workoutSetupMessage);
   document.getElementById('total-time').textContent = formatElapsedTime(workoutTotalSeconds);
   renderCurrentExercise();
@@ -735,12 +913,21 @@ function finishWorkout(completed = false) {
 }
 
 function advanceExercise() {
+  const exercise = workoutExercises[currentExerciseIndex];
+  if (currentSeriesIndex + 1 < getExerciseSeries(exercise)) {
+    currentSeriesIndex += 1;
+    saveWorkoutState();
+    renderCurrentExercise();
+    return;
+  }
+
   if (currentExerciseIndex >= workoutExercises.length - 1) {
     finishWorkout(true);
     return;
   }
 
   currentExerciseIndex += 1;
+  currentSeriesIndex = 0;
   saveWorkoutState();
   renderCurrentExercise();
 }
@@ -1062,9 +1249,15 @@ function initApp() {
     input.addEventListener('change', togglePainFields);
   });
 
-  document.getElementById('complete-exercise-button')?.addEventListener('click', () => exerciseDialog.showModal());
+  document.getElementById('complete-exercise-button')?.addEventListener('click', () => {
+    const exercise = workoutExercises[currentExerciseIndex];
+    document.getElementById('completed-reps').value = exercise?.reps || '';
+    document.getElementById('completed-weight').value = exercise?.weight || '';
+    document.getElementById('completed-discomfort').value = '';
+    exerciseDialog.showModal();
+  });
   document.getElementById('cancel-exercise-button')?.addEventListener('click', () => exerciseDialog.close());
-  document.getElementById('exercise-log-form')?.addEventListener('submit', (event) => {
+  document.getElementById('exercise-log-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     exerciseDialog.close();
     const hasLoggedData = ['completed-reps', 'completed-weight', 'completed-discomfort']
@@ -1073,12 +1266,29 @@ function initApp() {
       emptyExerciseDialog.showModal();
       return;
     }
+    const exercise = workoutExercises[currentExerciseIndex];
+    try {
+      await appendWorkoutLogRow(exercise, currentSeriesIndex + 1, true, {
+        reps: document.getElementById('completed-reps').value.trim(),
+        weight: document.getElementById('completed-weight').value.trim(),
+        discomfort: document.getElementById('completed-discomfort').value.trim()
+      });
+    } catch (error) {
+      showWorkoutSetupError(`No s’ha pogut guardar aquesta sèrie. ${error.message}`);
+      return;
+    }
     advanceExercise();
   });
   document.getElementById('cancel-empty-exercise-button')?.addEventListener('click', () => emptyExerciseDialog.close());
-  document.getElementById('empty-exercise-form')?.addEventListener('submit', (event) => {
+  document.getElementById('empty-exercise-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     emptyExerciseDialog.close();
+    try {
+      await appendWorkoutLogRow(workoutExercises[currentExerciseIndex], currentSeriesIndex + 1, true);
+    } catch (error) {
+      showWorkoutSetupError(`No s’ha pogut guardar aquesta sèrie. ${error.message}`);
+      return;
+    }
     advanceExercise();
   });
   document.getElementById('replace-exercise-button')?.addEventListener('click', () => replaceExerciseDialog.showModal());
@@ -1107,15 +1317,21 @@ function initApp() {
       renderCurrentExercise();
     } else {
       const setupNotice = document.getElementById('workout-setup-notice');
-      setupNotice.textContent = 'No hi ha cap altre exercici del mateix tipus disponible. Et quedes en aquest exercici.';
+      document.getElementById('workout-setup-message').textContent = 'No hi ha cap altre exercici del mateix tipus disponible. Et quedes en aquest exercici.';
       setupNotice.classList.remove('hidden');
     }
   });
   document.getElementById('skip-exercise-button')?.addEventListener('click', () => skipExerciseDialog.showModal());
   document.getElementById('cancel-skip-button')?.addEventListener('click', () => skipExerciseDialog.close());
-  document.getElementById('skip-exercise-form')?.addEventListener('submit', (event) => {
+  document.getElementById('skip-exercise-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     workoutExercises[currentExerciseIndex].status = 'Saltat';
+    try {
+      await appendWorkoutLogRow(workoutExercises[currentExerciseIndex], currentSeriesIndex + 1, false, { notes: 'Saltat' });
+    } catch (error) {
+      showWorkoutSetupError(`No s’ha pogut guardar aquest salt. ${error.message}`);
+      return;
+    }
     saveWorkoutState();
     skipExerciseDialog.close();
     advanceExercise();
@@ -1141,11 +1357,27 @@ function initApp() {
     calendarPanel.classList.remove('hidden');
     quizPanel.classList.add('hidden');
     workoutScreen.classList.add('hidden');
+    renderCalendar();
   };
   document.getElementById('home-calendar-button')?.addEventListener('click', openCalendar);
   document.getElementById('close-calendar-button')?.addEventListener('click', () => {
     calendarPanel.classList.add('hidden');
     quizPanel.classList.remove('hidden');
+  });
+  document.getElementById('calendar-previous-button')?.addEventListener('click', () => {
+    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+    renderCalendar();
+  });
+  document.getElementById('calendar-next-button')?.addEventListener('click', () => {
+    const currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const nextMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+    if (nextMonth <= currentMonth) {
+      calendarMonth = nextMonth;
+      renderCalendar();
+    }
+  });
+  document.getElementById('close-workout-setup-notice')?.addEventListener('click', () => {
+    document.getElementById('workout-setup-notice').classList.add('hidden');
   });
 
   const savedUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
