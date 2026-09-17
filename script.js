@@ -285,6 +285,27 @@ function createFallbackWorkoutExercises(formData) {
   }));
 }
 
+function downloadSpreadsheetTemplate(type) {
+  if (!window.XLSX) {
+    directoryValidationResult.innerHTML = '<strong>La llibreria Excel encara no està disponible.</strong><br />Torna-ho a provar en uns segons.';
+    return;
+  }
+
+  const ownHeaders = ['Dia', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Descans', 'Pes', 'Reps', 'Observacions'];
+  const catalogHeaders = [
+    'ID', 'Nom CA', 'Nom EN', 'Modalitat', 'Zones principals', 'Zones secundàries',
+    'Material requerit', 'Instruccions CA', 'Enllaç vídeo', 'Actiu', 'Agrada molt'
+  ];
+  const headers = type === 'propi' ? ownHeaders : catalogHeaders;
+  const example = type === 'propi'
+    ? ['', 'Força', 'Exemple d’exercici', 3, '8-10', '60"', '', '', '']
+    : ['EX001', 'Exemple d’exercici', 'Example exercise', 'Força', 'Tronc superior', '', 'Cap', 'Descriu aquí com fer-lo.', '', 'Sí', 'No'];
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([headers, example]);
+  XLSX.utils.book_append_sheet(workbook, sheet, type === 'propi' ? 'Entrenament propi' : 'Catàleg');
+  XLSX.writeFile(workbook, type === 'propi' ? 'plantilla-entrenament-propi.xlsx' : 'plantilla-cataleg-exercicis.xlsx');
+}
+
 function normalizeColumnName(value) {
   return String(value)
     .normalize('NFD')
@@ -307,16 +328,20 @@ async function createWorkoutExercises(formData) {
     const selectedTrainingFile = JSON.parse(localStorage.getItem(TRAINING_FILE_KEY) || 'null');
     if (!selectedTrainingFile?.id) {
       workoutSetupMessage = 'No s’ha trobat el fitxer d’entrenament propi. Comprova el prefix i els permisos de Drive.';
-      return createFallbackWorkoutExercises(formData);
+      return [];
     }
 
     try {
       const rows = await readSpreadsheetRows(selectedTrainingFile);
       if (rows.length < 2) throw new Error('El fitxer d’entrenament no conté files d’exercicis.');
       const headers = rows.shift().map((header) => String(header).trim());
+      const exerciseColumnAliases = ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Nom'];
+      if (!headers.some((header) => exerciseColumnAliases.some((alias) => normalizeColumnName(alias) === normalizeColumnName(header)))) {
+        throw new Error(`No s’ha trobat cap columna d’exercici. Columnes detectades: ${headers.join(', ')}`);
+      }
       const exercises = rows
         .map((row) => Object.fromEntries(headers.map((header, columnIndex) => [header, row[columnIndex] ?? ''])))
-        .filter((exercise) => Object.values(exercise).some((value) => String(value).trim() !== ''))
+        .filter((exercise) => getColumnValue(exercise, ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Nom']))
         .map((exercise, index) => ({
           type: getColumnValue(exercise, ['Tipus', 'Modalitat', 'Type']) || 'Entrenament propi',
           videoUrl: getColumnValue(exercise, ['Enllaç vídeo', 'Enllaç video', 'Vídeo', 'Video', 'Video URL']),
@@ -335,7 +360,7 @@ async function createWorkoutExercises(formData) {
       return exercises;
     } catch (error) {
       workoutSetupMessage = `No s’ha pogut obrir l’entrenament propi. ${error.message}`;
-      return createFallbackWorkoutExercises(formData);
+      return [];
     }
   }
 
@@ -663,6 +688,15 @@ function renderCurrentExercise() {
 async function startWorkout(formData) {
   workoutSetupMessage = '';
   workoutExercises = await createWorkoutExercises(formData);
+  if (!workoutExercises.length && formData.get('mode') !== 'proposat') {
+    const formError = document.getElementById('workout-form-error');
+    formError.textContent = workoutSetupMessage || 'No s’ha pogut preparar l’entrenament propi.';
+    formError.classList.remove('hidden');
+    quizPanel.classList.remove('hidden');
+    workoutScreen.classList.add('hidden');
+    return;
+  }
+  document.getElementById('workout-form-error')?.classList.add('hidden');
   try {
     await ensureMonthlyTrainingLog(workoutExercises, formData);
   } catch (error) {
@@ -983,6 +1017,9 @@ function initApp() {
       saveDirectoryPreference();
     });
   }
+
+  document.getElementById('download-own-template')?.addEventListener('click', () => downloadSpreadsheetTemplate('propi'));
+  document.getElementById('download-catalog-template')?.addEventListener('click', () => downloadSpreadsheetTemplate('catalog'));
 
   directorySettingsButton?.addEventListener('click', () => {
     if (directorySettings?.classList.contains('hidden')) {
