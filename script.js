@@ -280,8 +280,26 @@ function createFallbackWorkoutExercises(formData) {
     equipment: '',
     description: '',
     label: block,
-    index
+    index,
+    source: mode === 'proposat' ? 'catalog' : 'propi'
   }));
+}
+
+function normalizeColumnName(value) {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function getColumnValue(row, aliases) {
+  const normalizedRow = new Map(Object.entries(row).map(([key, value]) => [normalizeColumnName(key), value]));
+  for (const alias of aliases) {
+    const value = normalizedRow.get(normalizeColumnName(alias));
+    if (value !== undefined && String(value).trim() !== '') return value;
+  }
+  return '';
 }
 
 async function createWorkoutExercises(formData) {
@@ -300,17 +318,18 @@ async function createWorkoutExercises(formData) {
         .map((row) => Object.fromEntries(headers.map((header, columnIndex) => [header, row[columnIndex] ?? ''])))
         .filter((exercise) => Object.values(exercise).some((value) => String(value).trim() !== ''))
         .map((exercise, index) => ({
-          type: exercise['Tipus'] || exercise['Modalitat'] || 'Entrenament propi',
-          videoUrl: exercise['Enllaç vídeo'] || exercise['Vídeo'] || exercise['Video'] || '',
-          nameCa: exercise['Exercici'] || exercise['Nom CA'] || exercise['Nom'] || `Exercici ${index + 1}`,
-          nameEn: exercise['Nom EN'] || exercise['Name'] || 'Exercise from training file',
-          sets: exercise['Sèries'] || exercise['Series'] || '',
-          reps: exercise['Repeticions'] || exercise['Reps'] || '',
-          weight: exercise['Pes'] || exercise['Pes (kg)'] || exercise['Weight'] || '',
-          equipment: exercise['Material'] || exercise['Material requerit'] || 'Encara no especificat',
-          description: exercise['Descripció'] || exercise['Instruccions CA'] || exercise['Notes'] || '',
-          label: exercise['Exercici'] || exercise['Nom CA'] || exercise['Nom'] || `Exercici ${index + 1}`,
-          id: exercise['ID'] || ''
+          type: getColumnValue(exercise, ['Tipus', 'Modalitat', 'Type']) || 'Entrenament propi',
+          videoUrl: getColumnValue(exercise, ['Enllaç vídeo', 'Enllaç video', 'Vídeo', 'Video', 'Video URL']),
+          nameCa: getColumnValue(exercise, ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Exercici CA', 'Nom', 'Exercise']) || `Exercici ${index + 1}`,
+          nameEn: getColumnValue(exercise, ['Nom EN', 'Name', 'English name']) || 'Exercise from training file',
+          sets: getColumnValue(exercise, ['Sèries', 'Series', 'Sets']),
+          reps: getColumnValue(exercise, ['Repeticions', 'Reps', 'Repetitions']),
+          weight: getColumnValue(exercise, ['Pes', 'Pes (kg)', 'Weight', 'Expected weight']),
+          equipment: getColumnValue(exercise, ['Material', 'Material requerit', 'Equipment']) || 'Encara no especificat',
+          description: getColumnValue(exercise, ['Descripció', 'Instruccions CA', 'Notes', 'Description']),
+          label: getColumnValue(exercise, ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Nom', 'Exercise']) || `Exercici ${index + 1}`,
+          id: getColumnValue(exercise, ['ID', 'Exercise ID']),
+          source: 'propi'
         }));
       if (!exercises.length) throw new Error('El fitxer d’entrenament no conté cap exercici vàlid.');
       return exercises;
@@ -363,7 +382,8 @@ async function createWorkoutExercises(formData) {
       equipment: exercise['Material requerit'] || 'Cap',
       description: exercise['Instruccions CA'] || '',
       label: exercise['Nom CA'] || `Exercici ${index + 1}`,
-      id: exercise.ID || ''
+      id: exercise.ID || '',
+      source: 'catalog'
     }));
   } catch (error) {
     console.warn('No s’ha pogut llegir el catàleg d’exercicis.', error);
@@ -633,9 +653,10 @@ function renderCurrentExercise() {
   document.getElementById('workout-progress-bar').style.width = `${(currentExerciseIndex / workoutExercises.length) * 100}%`;
 
   const video = document.getElementById('exercise-video');
+  const videoSourceLabel = exercise.source === 'propi' ? 'fitxer d’entrenament propi' : 'catàleg';
   video.innerHTML = exercise.videoUrl
     ? `<span>Vídeo de l'exercici</span><a href="${exercise.videoUrl}" target="_blank" rel="noopener">Obrir vídeo</a>`
-    : '<span>Vídeo de l’exercici</span><small>Enllaç pendent del catàleg</small>';
+    : `<span>Vídeo de l’exercici</span><small>Enllaç pendent del ${videoSourceLabel}</small>`;
 }
 
 async function startWorkout(formData) {
