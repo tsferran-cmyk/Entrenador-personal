@@ -5,6 +5,7 @@ const DIRECTORY_KEY = 'fitflow-directory';
 const DIRECTORY_STATUS_KEY = 'fitflow-directory-status';
 const TRAINING_PREFIX_KEY = 'fitflow-training-prefix';
 const TRAINING_FILE_KEY = 'fitflow-training-file';
+const WORKOUT_STATE_KEY = 'fitflow-workout-in-progress';
 
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
@@ -28,6 +29,7 @@ const finishDialog = document.getElementById('finish-dialog');
 const emptyExerciseDialog = document.getElementById('empty-exercise-dialog');
 const replaceExerciseDialog = document.getElementById('replace-exercise-dialog');
 const skipExerciseDialog = document.getElementById('skip-exercise-dialog');
+const resumeWorkoutDialog = document.getElementById('resume-workout-dialog');
 const proposedFields = document.getElementById('proposed-fields');
 const painFields = document.getElementById('pain-fields');
 
@@ -284,7 +286,38 @@ function createFallbackWorkoutExercises(formData) {
 
 async function createWorkoutExercises(formData) {
   if (formData.get('mode') !== 'proposat') {
-    return createFallbackWorkoutExercises(formData);
+    const selectedTrainingFile = JSON.parse(localStorage.getItem(TRAINING_FILE_KEY) || 'null');
+    if (!selectedTrainingFile?.id) {
+      workoutSetupMessage = 'No s’ha trobat el fitxer d’entrenament propi. Comprova el prefix i els permisos de Drive.';
+      return createFallbackWorkoutExercises(formData);
+    }
+
+    try {
+      const rows = await readSpreadsheetRows(selectedTrainingFile);
+      if (rows.length < 2) throw new Error('El fitxer d’entrenament no conté files d’exercicis.');
+      const headers = rows.shift().map((header) => String(header).trim());
+      const exercises = rows
+        .map((row) => Object.fromEntries(headers.map((header, columnIndex) => [header, row[columnIndex] ?? ''])))
+        .filter((exercise) => Object.values(exercise).some((value) => String(value).trim() !== ''))
+        .map((exercise, index) => ({
+          type: exercise['Tipus'] || exercise['Modalitat'] || 'Entrenament propi',
+          videoUrl: exercise['Enllaç vídeo'] || exercise['Vídeo'] || exercise['Video'] || '',
+          nameCa: exercise['Exercici'] || exercise['Nom CA'] || exercise['Nom'] || `Exercici ${index + 1}`,
+          nameEn: exercise['Nom EN'] || exercise['Name'] || 'Exercise from training file',
+          sets: exercise['Sèries'] || exercise['Series'] || '',
+          reps: exercise['Repeticions'] || exercise['Reps'] || '',
+          weight: exercise['Pes'] || exercise['Pes (kg)'] || exercise['Weight'] || '',
+          equipment: exercise['Material'] || exercise['Material requerit'] || 'Encara no especificat',
+          description: exercise['Descripció'] || exercise['Instruccions CA'] || exercise['Notes'] || '',
+          label: exercise['Exercici'] || exercise['Nom CA'] || exercise['Nom'] || `Exercici ${index + 1}`,
+          id: exercise['ID'] || ''
+        }));
+      if (!exercises.length) throw new Error('El fitxer d’entrenament no conté cap exercici vàlid.');
+      return exercises;
+    } catch (error) {
+      workoutSetupMessage = `No s’ha pogut obrir l’entrenament propi. ${error.message}`;
+      return createFallbackWorkoutExercises(formData);
+    }
   }
 
   try {
@@ -395,21 +428,14 @@ async function readSpreadsheetRows(file) {
   if (!window.XLSX) throw new Error('La llibreria Excel encara no està disponible.');
 
   if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-    const metadataResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(fileId)}?fields=sheets.properties.title`, {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
-    if (!metadataResponse.ok) throw new Error('No s’ha pogut consultar el Google Sheet del catàleg.');
-    const metadata = await metadataResponse.json();
-    const sheetTitle = metadata.sheets?.[0]?.properties?.title;
-    if (!sheetTitle) throw new Error('El Google Sheet del catàleg no té cap pestanya llegible.');
-
-    const range = encodeURIComponent(`'${sheetTitle.replace(/'/g, "''")}'`);
-    const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(fileId)}/values/${range}`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (!response.ok) throw new Error(`Google Sheets ha rebutjat la lectura (${response.status}).`);
-    const data = await response.json();
-    return data.values || [];
+    if (!response.ok) throw new Error(`Drive ha rebutjat l’exportació del Google Sheet (${response.status}).`);
+    const workbook = XLSX.read(await response.arrayBuffer(), { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
+      .filter((row, index) => index === 0 || row.some((cell) => String(cell).trim() !== ''));
   }
 
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, {
@@ -525,6 +551,68 @@ function formatElapsedTime(seconds) {
   return `${minutes}:${remainingSeconds}`;
 }
 
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function saveWorkoutState() {
+  if (!workoutExercises.length) return;
+
+  localStorage.setItem(WORKOUT_STATE_KEY, JSON.stringify({
+    date: getLocalDateKey(),
+    exercises: workoutExercises,
+    currentExerciseIndex,
+    totalSeconds: workoutTotalSeconds,
+    startedAt: workoutStartedAt
+  }));
+}
+
+function clearWorkoutState() {
+  localStorage.removeItem(WORKOUT_STATE_KEY);
+}
+
+function getPendingWorkoutState() {
+  try {
+    const state = JSON.parse(localStorage.getItem(WORKOUT_STATE_KEY) || 'null');
+    if (!state || state.date !== getLocalDateKey() || !Array.isArray(state.exercises) || !state.exercises.length) {
+      clearWorkoutState();
+      return null;
+    }
+    return state;
+  } catch {
+    clearWorkoutState();
+    return null;
+  }
+}
+
+function resumeWorkout(state) {
+  workoutExercises = state.exercises;
+  currentExerciseIndex = Math.min(Math.max(Number(state.currentExerciseIndex) || 0, 0), workoutExercises.length - 1);
+  workoutTotalSeconds = Number(state.totalSeconds) || 1800;
+  workoutStartedAt = Number(state.startedAt) || Date.now();
+  clearInterval(workoutTimer);
+  workoutTimer = setInterval(() => {
+    document.getElementById('elapsed-time').textContent = formatElapsedTime(Math.floor((Date.now() - workoutStartedAt) / 1000));
+  }, 1000);
+  quizPanel.classList.add('hidden');
+  workoutScreen.classList.remove('hidden');
+  appScreen.classList.add('workout-active');
+  calendarPanel.classList.add('hidden');
+  document.getElementById('workout-complete-notice').classList.add('hidden');
+  document.getElementById('workout-setup-notice').classList.add('hidden');
+  document.getElementById('total-time').textContent = formatElapsedTime(workoutTotalSeconds);
+  renderCurrentExercise();
+}
+
+function offerWorkoutResume() {
+  const state = getPendingWorkoutState();
+  if (!state || !resumeWorkoutDialog?.showModal) return;
+  resumeWorkoutDialog.showModal();
+}
+
 function renderCurrentExercise() {
   const exercise = workoutExercises[currentExerciseIndex];
   if (!exercise) return;
@@ -561,6 +649,7 @@ async function startWorkout(formData) {
   currentExerciseIndex = 0;
   workoutTotalSeconds = Number(formData.get('duration') || 30) * 60;
   workoutStartedAt = Date.now();
+  saveWorkoutState();
   clearInterval(workoutTimer);
   workoutTimer = setInterval(() => {
     document.getElementById('elapsed-time').textContent = formatElapsedTime(Math.floor((Date.now() - workoutStartedAt) / 1000));
@@ -585,6 +674,7 @@ function finishWorkout(completed = false) {
   appScreen.classList.remove('workout-active');
   document.getElementById('workout-complete-notice').classList.toggle('hidden', !completed);
   currentExerciseIndex = 0;
+  clearWorkoutState();
 }
 
 function advanceExercise() {
@@ -594,6 +684,7 @@ function advanceExercise() {
   }
 
   currentExerciseIndex += 1;
+  saveWorkoutState();
   renderCurrentExercise();
 }
 
@@ -952,6 +1043,7 @@ function initApp() {
         id: replacement.ID || '',
         status: 'Previst'
       };
+      saveWorkoutState();
       renderCurrentExercise();
     } else {
       const setupNotice = document.getElementById('workout-setup-notice');
@@ -964,8 +1056,19 @@ function initApp() {
   document.getElementById('skip-exercise-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     workoutExercises[currentExerciseIndex].status = 'Saltat';
+    saveWorkoutState();
     skipExerciseDialog.close();
     advanceExercise();
+  });
+  document.getElementById('resume-workout-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const state = getPendingWorkoutState();
+    resumeWorkoutDialog.close();
+    if (state) resumeWorkout(state);
+  });
+  document.getElementById('discard-resume-button')?.addEventListener('click', () => {
+    clearWorkoutState();
+    resumeWorkoutDialog.close();
   });
   document.getElementById('finish-workout-button')?.addEventListener('click', () => finishDialog.showModal());
   document.getElementById('cancel-finish-button')?.addEventListener('click', () => finishDialog.close());
@@ -1000,10 +1103,12 @@ function initApp() {
 
   if (savedUser) {
     requestDriveAccess('');
+    offerWorkoutResume();
   }
 
   document.getElementById('logout-btn').addEventListener('click', () => {
     clearUser();
+    clearWorkoutState();
     directoryInput.value = '';
     trainingFilePrefixInput.value = '';
     localStorage.removeItem(DIRECTORY_KEY);
