@@ -496,6 +496,7 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
         console.warn('No s’han pogut carregar les zones del catàleg.', error);
       }
     }
+  }
   const templateRows = templateFile ? await readSpreadsheetRows(templateFile) : [];
   const headers = templateRows.shift() || [
     'Sessió ID', 'Data', 'Tipus entrenament', 'Material disponible', 'Ordre exercici',
