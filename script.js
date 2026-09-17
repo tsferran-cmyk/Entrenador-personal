@@ -5,6 +5,7 @@ const DIRECTORY_KEY = 'fitflow-directory';
 const DIRECTORY_STATUS_KEY = 'fitflow-directory-status';
 const TRAINING_PREFIX_KEY = 'fitflow-training-prefix';
 const TRAINING_FILE_KEY = 'fitflow-training-file';
+const TRAINING_FILE_VERSION_KEY = 'fitflow-training-file-version';
 const WORKOUT_STATE_KEY = 'fitflow-workout-in-progress';
 const CALENDAR_MONTH_KEY = 'fitflow-calendar-month';
 
@@ -298,15 +299,17 @@ function downloadSpreadsheetTemplate(type) {
     return;
   }
 
-  const ownHeaders = ['Dia', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Descans', 'Pes', 'Reps', 'Observacions'];
+  const ownHeaders = ['Numero', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Descans', 'Pes', 'Material', 'Descripció', 'Link'];
   const catalogHeaders = [
-    'ID', 'Nom CA', 'Nom EN', 'Modalitat', 'Zones principals', 'Zones secundàries',
-    'Material requerit', 'Instruccions CA', 'Enllaç vídeo', 'Actiu', 'Agrada molt'
+    'ID', 'Nom CA', 'Nom EN', 'Àlies CA', 'Àlies EN', 'Zones principals', 'Zones secundàries',
+    'Fase', 'Modalitat', 'Patró de moviment', 'Material requerit', 'Material opcional',
+    'Posició', 'Lateralitat', 'Dificultat', 'Mètriques de registre', 'Etiquetes',
+    'Instruccions CA', 'Instruccions EN', 'Actiu', 'Notes', 'Link'
   ];
   const headers = type === 'propi' ? ownHeaders : catalogHeaders;
   const example = type === 'propi'
-    ? ['', 'Força', 'Exemple d’exercici', 3, '8-10', '60"', '', '', '']
-    : ['EX001', 'Exemple d’exercici', 'Example exercise', 'Força', 'Tronc superior', '', 'Cap', 'Descriu aquí com fer-lo.', '', 'Sí', 'No'];
+    ? [1, 'Força', 'Exemple d’exercici', 3, '8-10', '60"', 60, 'Material', 'Descriu aquí com fer-lo.', 'https://...']
+    : ['EX001', 'Exemple d’exercici', 'Example exercise', '', '', '', 'Entrenament', 'Força', 'Patró', 'Cap', '', '', '', '', 'Inicial', 'Sèries; repeticions', 'força', 'Descriu aquí com fer-lo.', 'Describe here.', 'Sí', '', 'https://...'];
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([headers, example]);
   XLSX.utils.book_append_sheet(workbook, sheet, type === 'propi' ? 'Entrenament propi' : 'Catàleg');
@@ -349,7 +352,7 @@ async function chooseNextOwnTrainingDay(availableDays) {
   const orderedDays = [...availableDays].sort((first, second) => Number(first) - Number(second));
   const directoryId = extractGoogleId(directoryInput.value.trim());
   if (!directoryId) return orderedDays[0];
-  const files = window.driveFiles || [];
+  const files = await collectDriveFiles(directoryId);
   const now = new Date();
   const monthFileName = `${String(now.getMonth() + 1).padStart(2, '0')}.${now.getFullYear()} - Log entrenament.xlsx`;
   const logFile = files.find((file) => file.name === monthFileName);
@@ -357,7 +360,7 @@ async function chooseNextOwnTrainingDay(availableDays) {
   try {
     const rows = await readSpreadsheetRows(logFile);
     const headers = rows.shift()?.map((header) => String(header).trim()) || [];
-    const dayIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Dia entrenament'));
+    const dayIndex = headers.findIndex((header) => ['diaentrenament', 'numentrenament', 'numero'].includes(normalizeColumnName(header)));
     const typeIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Tipus entrenament'));
     const completedIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Completat'));
     const completedDays = rows
@@ -383,7 +386,7 @@ async function createWorkoutExercises(formData) {
     }
 
     try {
-      const rows = await readSpreadsheetRows(selectedTrainingFile);
+      const rows = await readSpreadsheetRows({ ...selectedTrainingFile, cacheBust: Date.now() });
       if (rows.length < 2) throw new Error('El fitxer d’entrenament no conté files d’exercicis.');
       const headers = rows.shift().map((header) => String(header).trim());
       const exerciseColumnAliases = ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Nom'];
@@ -400,9 +403,9 @@ async function createWorkoutExercises(formData) {
         })
         .filter((exercise) => getColumnValue(exercise, ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Nom']))
         .map((exercise, index) => ({
-          day: getColumnValue(exercise, ['Dia', 'Day', 'Dia entrenament', 'Dia d’entrenament']),
+          day: getColumnValue(exercise, ['Numero', 'Número', 'Dia', 'Day', 'Dia entrenament', 'Dia d’entrenament']),
           type: getColumnValue(exercise, ['Tipus', 'Modalitat', 'Type']) || 'Entrenament propi',
-          videoUrl: getColumnValue(exercise, ['Enllaç vídeo', 'Enllaç video', 'Vídeo', 'Video', 'Video URL']),
+          videoUrl: getColumnValue(exercise, ['Link', 'Enllaç vídeo', 'Enllaç video', 'Vídeo', 'Video', 'Video URL']),
           nameCa: getColumnValue(exercise, ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Exercici CA', 'Nom', 'Exercise']) || `Exercici ${index + 1}`,
           nameEn: getColumnValue(exercise, ['Nom EN', 'Name', 'English name']) || 'Exercise from training file',
           sets: getColumnValue(exercise, ['Sèries', 'Series', 'Sets']),
@@ -413,7 +416,8 @@ async function createWorkoutExercises(formData) {
           description: getColumnValue(exercise, ['Descripció', 'Instruccions CA', 'Notes', 'Description']),
           label: getColumnValue(exercise, ['Exercici', 'Nom CA', 'Nom de l’exercici', 'Nom de l\'exercici', 'Nom exercici', 'Nom', 'Exercise']) || `Exercici ${index + 1}`,
           id: getColumnValue(exercise, ['ID', 'Exercise ID']),
-          source: 'propi'
+          source: 'propi',
+          zones: ''
         }));
       if (!exercises.length) throw new Error('El fitxer d’entrenament no conté cap exercici vàlid.');
       const availableDays = [...new Set(exercises.map(getExerciseDay).filter(Boolean))];
@@ -463,11 +467,12 @@ async function createWorkoutExercises(formData) {
       const equipmentMatches = hasEquipment || String(exercise['Material requerit']).toLocaleLowerCase() === 'cap';
       return typeMatches && focusMatches && painMatches && equipmentMatches;
     });
-    const source = chooseDailyExercises(selected.length ? selected : exercises, 5);
+    const duration = Number(formData.get('duration') || 15);
+    const source = chooseDailyExercises(selected.length ? selected : exercises, Math.max(1, Math.floor(duration / 5)));
 
     return source.map((exercise, index) => ({
       type: exercise.Modalitat || 'Entrenament',
-      videoUrl: exercise['Enllaç vídeo'] || exercise['Vídeo'] || '',
+      videoUrl: exercise.Link || exercise['Enllaç vídeo'] || exercise['Vídeo'] || '',
       nameCa: exercise['Nom CA'] || 'Exercici sense nom',
       nameEn: exercise['Nom EN'] || 'Exercise without name',
       sets: '', reps: '', weight: '',
@@ -475,7 +480,8 @@ async function createWorkoutExercises(formData) {
       description: exercise['Instruccions CA'] || '',
       label: exercise['Nom CA'] || `Exercici ${index + 1}`,
       id: exercise.ID || '',
-      source: 'catalog'
+      source: 'catalog',
+      zones: `${exercise['Zones principals'] || ''};${exercise['Zones secundàries'] || ''}`
     }));
   } catch (error) {
     console.warn('No s’ha pogut llegir el catàleg d’exercicis.', error);
@@ -509,9 +515,34 @@ function chooseDailyExercises(exercises, count) {
   return selected;
 }
 
+function getZoneTokens(value) {
+  return String(value || '')
+    .toLocaleLowerCase()
+    .split(/[;,/]/)
+    .map((zone) => normalizeColumnName(zone))
+    .filter(Boolean);
+}
+
+function getCatalogUsage() {
+  try {
+    return JSON.parse(localStorage.getItem('fitflow-catalog-usage') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function recordCatalogUsage(exerciseId) {
+  if (!exerciseId) return;
+  const usage = getCatalogUsage();
+  usage[exerciseId] = Number(usage[exerciseId] || 0) + 1;
+  localStorage.setItem('fitflow-catalog-usage', JSON.stringify(usage));
+}
+
 function findReplacementExercise(currentExercise) {
   if (!workoutCriteria || !catalogExercises.length) return null;
   const currentId = currentExercise.id;
+  const currentZones = getZoneTokens(currentExercise.zones);
+  const usage = getCatalogUsage();
   const candidates = catalogExercises.filter((exercise) => {
     if (exercise.ID === currentId) return false;
     const modality = String(exercise.Modalitat).toLocaleLowerCase();
@@ -520,11 +551,21 @@ function findReplacementExercise(currentExercise) {
       : workoutCriteria.trainingType === 'forcaMobilitat'
         ? modality.includes('força') || modality.includes('mobilitat')
         : modality.includes('força');
-    return typeMatches && (!workoutCriteria.hasEquipment
+    const candidateZones = getZoneTokens(`${exercise['Zones principals']};${exercise['Zones secundàries']}`);
+    const sharesZone = !currentZones.length || currentZones.some((zone) => candidateZones.includes(zone));
+    return typeMatches && sharesZone && (!workoutCriteria.hasEquipment
       ? String(exercise['Material requerit']).toLocaleLowerCase() === 'cap'
       : true);
   });
-  return candidates.find((exercise) => !workoutExercises.some((item) => item.id === exercise.ID)) || null;
+  return [...candidates]
+    .filter((exercise) => !workoutExercises.some((item) => item.id === exercise.ID))
+    .sort((first, second) => {
+      const firstZones = getZoneTokens(`${first['Zones principals']};${first['Zones secundàries']}`);
+      const secondZones = getZoneTokens(`${second['Zones principals']};${second['Zones secundàries']}`);
+      const firstMatch = currentZones.filter((zone) => firstZones.includes(zone)).length;
+      const secondMatch = currentZones.filter((zone) => secondZones.includes(zone)).length;
+      return secondMatch - firstMatch || Number(usage[first.ID] || 0) - Number(usage[second.ID] || 0);
+    })[0] || null;
 }
 
 function findCatalogFile() {
@@ -537,10 +578,11 @@ function findCatalogFile() {
 async function readSpreadsheetRows(file) {
   const fileId = typeof file === 'string' ? file : file.id;
   const mimeType = typeof file === 'string' ? '' : file.mimeType;
+  const cacheBust = `&_fitflow=${Date.now()}`;
   if (!window.XLSX) throw new Error('La llibreria Excel encara no està disponible.');
 
   if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet${cacheBust}`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     if (!response.ok) throw new Error(`Drive ha rebutjat l’exportació del Google Sheet (${response.status}).`);
@@ -550,7 +592,7 @@ async function readSpreadsheetRows(file) {
       .filter((row, index) => index === 0 || row.some((cell) => String(cell).trim() !== ''));
   }
 
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media${cacheBust}`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (!response.ok) throw new Error(`Drive ha rebutjat la descàrrega del fitxer (${response.status}).`);
@@ -572,6 +614,7 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
   const fileName = `${month}.${year} - Log entrenament.xlsx`;
   const files = await collectDriveFiles(directoryId);
   const existingFile = files.find((file) => file.name === fileName);
+  workoutLogFile = existingFile || null;
   const templateFile = files.find((file) => file.name.toLocaleLowerCase().startsWith('plantilla log entrenament'));
   if (formData.get('mode') === 'proposat') {
     const catalogFile = files.find((file) => file.mimeType !== 'application/vnd.google-apps.folder'
@@ -590,11 +633,12 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
     }
   }
   const defaultHeaders = [
-    'Sessió ID', 'Data', 'Dia entrenament', 'Tipus entrenament', 'Material disponible', 'Ordre exercici',
-    'Exercici ID', 'Exercici', 'Origen / motiu exercici', 'Objectiu correctiu', 'Sèrie',
-    'Costat', 'Repeticions', 'Pes (kg)', 'Temps (s)', 'Distància (m)', 'Descans (s)',
-    'Esforç RPE (1–10)', 'Completat', 'Molèsties', 'Zona molèstia',
-    'Intensitat molèstia (0–10)', 'Descripció molèstia / què ha passat', 'Adaptació feta', 'Observacions'
+    'Sessió ID', 'Núm. entrenament', 'Data', 'Origen entrenament', 'Tipus entrenament',
+    'Material disponible', 'Ordre exercici', 'Exercici ID', 'Exercici', 'Origen / motiu exercici',
+    'Objectiu correctiu', 'Sèrie', 'Costat', 'Repeticions', 'Pes (kg)', 'Temps (s)',
+    'Distància (m)', 'Descans (s)', 'Esforç RPE (1–10)', 'Completat', 'Molèsties',
+    'Zona molèstia', 'Intensitat molèstia (0–10)', 'Descripció molèstia / què ha passat',
+    'Adaptació feta', 'Observacions'
   ];
   let headers;
   if (existingFile) {
@@ -627,8 +671,10 @@ async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
     'Sessió ID': workoutSessionId,
     Data: new Date().toISOString().slice(0, 10),
     'Dia entrenament': workoutDay,
+    'Núm. entrenament': workoutDay,
     Dia: workoutDay,
     'Tipus entrenament': exercise.source === 'catalog' ? 'Proposat' : 'Propi',
+    'Origen entrenament': exercise.source === 'catalog' ? 'Catàleg exercicis' : 'Entrenament propi',
     'Ordre exercici': currentExerciseIndex + 1,
     'Exercici ID': exercise.id || '',
     Exercici: exercise.nameCa || '',
@@ -642,7 +688,8 @@ async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
   };
   const row = headers.map((header) => {
     const normalized = normalizeColumnName(header);
-    if (['dia', 'diaentrenament'].includes(normalized)) return workoutDay;
+    if (['dia', 'diaentrenament', 'numentrenament'].includes(normalized)) return workoutDay;
+    if (normalized === 'origenentrenament') return values['Origen entrenament'];
     if (normalized === 'tipus') return values['Tipus entrenament'];
     if (normalized === 'exercici') return values.Exercici;
     if (['series', 'serie'].includes(normalized)) return values.Sèrie;
@@ -657,6 +704,7 @@ async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
   const uploadedFile = await uploadSpreadsheet(workoutLogFile.name, content, workoutLogFile.id, extractGoogleId(directoryInput.value.trim()));
   workoutLogFile = { ...workoutLogFile, ...uploadedFile };
   window.driveFiles = (window.driveFiles || []).map((file) => file.id === workoutLogFile.id ? workoutLogFile : file);
+  if (exercise.source === 'catalog') recordCatalogUsage(exercise.id);
 }
 
 async function uploadSpreadsheet(fileName, content, fileId, parentId) {
@@ -853,7 +901,7 @@ function renderCurrentExercise() {
   const videoSourceLabel = exercise.source === 'propi' ? 'fitxer d’entrenament propi' : 'catàleg';
   video.innerHTML = exercise.videoUrl
     ? `<span>Vídeo</span><a href="${exercise.videoUrl}" target="_blank" rel="noopener">Obrir</a>`
-    : `<span>Vídeo</span><small>Enllaç pendent del ${videoSourceLabel}</small>`;
+    : `<span>Vídeo</span><small>Sense link</small>`;
 }
 
 function showWorkoutSetupError(message) {
@@ -1304,13 +1352,15 @@ function initApp() {
     if (replacement) {
       workoutExercises[currentExerciseIndex] = {
         type: replacement.Modalitat || currentExercise.type,
-        videoUrl: replacement['Enllaç vídeo'] || replacement['Vídeo'] || '',
+        videoUrl: replacement.Link || replacement['Enllaç vídeo'] || replacement['Vídeo'] || '',
         nameCa: replacement['Nom CA'] || 'Exercici sense nom',
         nameEn: replacement['Nom EN'] || 'Exercise without name',
         sets: '', reps: '', weight: '',
         equipment: replacement['Material requerit'] || 'Cap',
         description: replacement['Instruccions CA'] || '',
         id: replacement.ID || '',
+        source: 'catalog',
+        zones: `${replacement['Zones principals'] || ''};${replacement['Zones secundàries'] || ''}`,
         status: 'Previst'
       };
       saveWorkoutState();
