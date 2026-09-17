@@ -441,7 +441,7 @@ async function readSpreadsheetRows(file) {
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
-  if (!response.ok) throw new Error(`Drive ha rebutjat la descàrrega del catàleg (${response.status}).`);
+  if (!response.ok) throw new Error(`Drive ha rebutjat la descàrrega del fitxer (${response.status}).`);
   const workbook = XLSX.read(await response.arrayBuffer(), { type: 'array' });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
@@ -461,6 +461,7 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
   const files = window.driveFiles || await collectDriveFiles(directoryId);
   const existingFile = files.find((file) => file.name === fileName);
   const templateFile = files.find((file) => file.name.toLocaleLowerCase().startsWith('plantilla log entrenament'));
+  if (formData.get('mode') === 'proposat') {
     const catalogFile = files.find((file) => file.mimeType !== 'application/vnd.google-apps.folder'
       && file.name.toLocaleLowerCase().startsWith('catàleg exercicis'));
     if (catalogFile) {
