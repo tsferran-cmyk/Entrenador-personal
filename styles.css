@@ -365,6 +365,26 @@ select:focus {
   accent-color: var(--primary);
 }
 
+.editable-stat {
+  border: 1px dashed rgba(126, 240, 168, 0.65);
+  border-radius: 8px;
+  padding: 0.15rem 0.35rem;
+  background: transparent;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.series-editor {
+  width: 4.5rem;
+  margin-top: 4px;
+  padding: 0.25rem;
+  background: rgba(3, 11, 18, 0.8);
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  color: var(--text);
+  font-weight: 700;
+}
+
 .result-panel {
   background: var(--panel-alt);
 }
