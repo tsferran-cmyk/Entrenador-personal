@@ -8,13 +8,16 @@ Aplicació web per gestionar accés segur amb Google, carregar les dades d’un 
 
 - Login mitjançant Google Identity Services
 - Accés i escriptura de fitxers de Google Drive amb OAuth 2.0
-- Pregunta si vols:
-  - accedir a un entrenament propi
-  - o que la web et proposi un entrenament
-- Si és proposat, pregunta:
+- Permet escollir entre:
+  - entrenament propi
+  - entrenament auto-generat per al mes actual
+  - `Pim pam`, una proposta nova a partir del catàleg
+- Per als entrenaments auto-generats i `Pim pam`, pregunta:
   - tipus d’entrenament: força, mobilitat o força + mobilitat
   - durada: 15, 30, 45 o 60 minuts
-  - zona a treballar: part superior, core, inferior, full body o recuperació
+  - una o més zones a treballar: part superior, core o inferior
+- L'entrenament auto-generat demana quantes rutines diferents vols i crea o reutilitza `Entrenament auto-generat AAAA.MM.xlsx`.
+- Crea `Repeticions actuals.xlsx` i hi desa les sèries, repeticions i pesos per reutilitzar-los en propostes futures.
 - Genera un entrenament automàtic
 - Llegeix el catàleg d’exercicis en format Excel o Google Sheets
 - Crea o actualitza el log mensual `MM.AAAA - Log entrenament.xlsx`

@@ -8,6 +8,7 @@ const TRAINING_FILE_KEY = 'fitflow-training-file';
 const TRAINING_FILE_VERSION_KEY = 'fitflow-training-file-version';
 const WORKOUT_STATE_KEY = 'fitflow-workout-in-progress';
 const CALENDAR_MONTH_KEY = 'fitflow-calendar-month';
+const CURRENT_REPETITIONS_FILE_NAME = 'Repeticions actuals.xlsx';
 
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
@@ -34,6 +35,7 @@ const skipExerciseDialog = document.getElementById('skip-exercise-dialog');
 const resumeWorkoutDialog = document.getElementById('resume-workout-dialog');
 const proposedFields = document.getElementById('proposed-fields');
 const painFields = document.getElementById('pain-fields');
+const generatedWorkoutCountFields = document.getElementById('generated-workout-count-fields');
 
 let accessToken = null;
 let tokenClient = null;
@@ -210,9 +212,8 @@ function saveDirectoryPreference() {
 function toggleModeFields() {
   const mode = document.querySelector('input[name="mode"]:checked')?.value || 'propio';
   proposedFields.classList.toggle('hidden', mode === 'propio');
-  if (mode === 'proposat') {
-    togglePainFields();
-  }
+  generatedWorkoutCountFields?.classList.toggle('hidden', mode !== 'auto-generat');
+  togglePainFields();
 }
 
 function togglePainFields() {
@@ -255,13 +256,13 @@ function createWorkoutPlan(formData) {
 
   const trainingType = formData.get('trainingType') || 'forca';
   const duration = Number(formData.get('duration') || 30);
-  const focus = formData.get('focus') || 'fullbody';
+  const focus = formData.getAll('focus');
   const plan = trainingMap[trainingType];
 
   return `
     <h3>${plan.label}</h3>
     <p><strong>Durada:</strong> ${duration} minuts</p>
-    <p><strong>Zona:</strong> ${focusMap[focus]}</p>
+    <p><strong>Zones:</strong> ${focus.length ? focus.map((item) => focusMap[item]).join(', ') : 'totes'}</p>
     <p><strong>Objectiu:</strong> ${plan.intro}</p>
     <ul>
       ${plan.blocks
@@ -275,12 +276,12 @@ function createWorkoutPlan(formData) {
 function createFallbackWorkoutExercises(formData) {
   const mode = formData.get('mode');
   const plan = trainingMap[formData.get('trainingType') || 'forca'];
-  const blocks = mode === 'proposat' ? plan.blocks : ['Exercici propi recuperat del directori'];
+  const blocks = mode === 'pim-pam' ? plan.blocks : ['Exercici propi recuperat del directori'];
 
   return blocks.map((block, index) => ({
-    type: mode === 'proposat' ? plan.label : 'Entrenament propi',
+    type: mode === 'pim-pam' ? plan.label : 'Entrenament propi',
     videoUrl: '',
-    nameCa: mode === 'proposat' ? block : 'Exercici del fitxer d’entrenament',
+    nameCa: mode === 'pim-pam' ? block : 'Exercici del fitxer d’entrenament',
     nameEn: 'Exercise from training file',
     sets: '',
     reps: '',
@@ -289,7 +290,7 @@ function createFallbackWorkoutExercises(formData) {
     description: '',
     label: block,
     index,
-    source: mode === 'proposat' ? 'catalog' : 'propi'
+    source: mode === 'pim-pam' ? 'catalog' : 'propi'
   }));
 }
 
@@ -348,6 +349,136 @@ function getExerciseDay(exercise) {
   return match ? match[0] : value;
 }
 
+function getCurrentMonthAutoFileName(date = new Date()) {
+  return `Entrenament auto-generat ${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.xlsx`;
+}
+
+function getExerciseRepetitionKey(exercise) {
+  return String(exercise.id || exercise.nameCa || '').trim().toLocaleLowerCase();
+}
+
+async function readCurrentRepetitions() {
+  const file = (window.driveFiles || []).find((item) => item.name === CURRENT_REPETITIONS_FILE_NAME);
+  if (!file) return { file: null, rows: [], headers: ['Exercici ID', 'Exercici', 'Sèries', 'Repeticions', 'Pes (kg)'] };
+  const rows = await readSpreadsheetRows(file);
+  const headers = rows.shift()?.map((header) => String(header).trim()) || [];
+  return { file, rows, headers };
+}
+
+function applyCurrentRepetition(exercise, repetitionRows, headers) {
+  const idIndex = headers.findIndex((header) => ['exerciciid', 'id'].includes(normalizeColumnName(header)));
+  const nameIndex = headers.findIndex((header) => ['exercici', 'nom'].includes(normalizeColumnName(header)));
+  const match = repetitionRows.find((row) => (
+    (exercise.id && String(row[idIndex] || '').trim() === String(exercise.id).trim())
+    || (!exercise.id && String(row[nameIndex] || '').trim().toLocaleLowerCase() === String(exercise.nameCa).trim().toLocaleLowerCase())
+  ));
+  if (!match) return exercise;
+  return {
+    ...exercise,
+    totalSeries: parseSeriesCount(match[headers.findIndex((header) => normalizeColumnName(header) === 'series')]),
+    sets: match[headers.findIndex((header) => normalizeColumnName(header) === 'series')] || exercise.sets,
+    reps: match[headers.findIndex((header) => normalizeColumnName(header) === 'repeticions')] || exercise.reps,
+    weight: match[headers.findIndex((header) => ['pes', 'peskg'].includes(normalizeColumnName(header)))] || exercise.weight
+  };
+}
+
+async function updateCurrentRepetitions(exercise, reps, weight) {
+  if (!accessToken || !window.XLSX) return;
+  const directoryId = extractGoogleId(directoryInput.value.trim());
+  if (!directoryId) return;
+  const current = await readCurrentRepetitions();
+  const headers = current.headers.length ? current.headers : ['Exercici ID', 'Exercici', 'Sèries', 'Repeticions', 'Pes (kg)'];
+  const idIndex = headers.findIndex((header) => ['exerciciid', 'id'].includes(normalizeColumnName(header)));
+  const nameIndex = headers.findIndex((header) => ['exercici', 'nom'].includes(normalizeColumnName(header)));
+  const row = headers.map((header) => {
+    const normalized = normalizeColumnName(header);
+    if (normalized === 'exerciciid' || normalized === 'id') return exercise.id || '';
+    if (normalized === 'exercici' || normalized === 'nom') return exercise.nameCa || '';
+    if (normalized === 'series' || normalized === 'serie') return getExerciseSeries(exercise);
+    if (normalized === 'repeticions' || normalized === 'reps') return reps || exercise.reps || '';
+    if (normalized === 'pes' || normalized === 'peskg') return weight || exercise.weight || '';
+    return '';
+  });
+  const existingIndex = current.rows.findIndex((item) => (
+    (exercise.id && String(item[idIndex] || '').trim() === String(exercise.id).trim())
+    || (!exercise.id && String(item[nameIndex] || '').trim().toLocaleLowerCase() === String(exercise.nameCa).trim().toLocaleLowerCase())
+  ));
+  if (existingIndex >= 0) current.rows[existingIndex] = row;
+  else current.rows.push(row);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([headers, ...current.rows]), 'Repeticions actuals');
+  const content = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const uploadedFile = await uploadSpreadsheet(CURRENT_REPETITIONS_FILE_NAME, content, current.file?.id || null, directoryId);
+  window.driveFiles = (window.driveFiles || []).filter((file) => file.name !== CURRENT_REPETITIONS_FILE_NAME);
+  window.driveFiles = [...(window.driveFiles || []), uploadedFile];
+}
+
+async function ensureCurrentRepetitionsFile() {
+  if (!accessToken || !window.XLSX) return;
+  const directoryId = extractGoogleId(directoryInput.value.trim());
+  if (!directoryId) return;
+  const current = await readCurrentRepetitions();
+  if (current.file) return;
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([current.headers]), 'Repeticions actuals');
+  const content = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const uploadedFile = await uploadSpreadsheet(CURRENT_REPETITIONS_FILE_NAME, content, null, directoryId);
+  window.driveFiles = [...(window.driveFiles || []), uploadedFile];
+}
+
+async function maybeUpdateCurrentRepetitions(exercise, reps, weight) {
+  if (!reps && !weight) return;
+  const currentReps = String(exercise.reps || '').trim();
+  const nextReps = String(reps || '').trim();
+  if (currentReps && nextReps && currentReps !== nextReps
+    && !window.confirm(`Has fet ${nextReps} repeticions i en constaven ${currentReps}. Vols actualitzar Repeticions actuals?`)) return;
+  await updateCurrentRepetitions(exercise, nextReps, String(weight || '').trim());
+}
+
+async function ensureAutoGeneratedTrainingFile(formData) {
+  const directoryId = extractGoogleId(directoryInput.value.trim());
+  if (!directoryId) throw new Error('No s’ha definit el directori de Google Drive.');
+  const files = await collectDriveFiles(directoryId);
+  const fileName = getCurrentMonthAutoFileName();
+  const existingFile = files.find((file) => file.name === fileName);
+  if (existingFile) return existingFile;
+  if (!window.confirm(`No has definit encara l’entrenament auto-generat del mes. Vols crear ${fileName}?`)) {
+    throw new Error('No s’ha creat cap entrenament auto-generat.');
+  }
+  const catalogFile = findCatalogFile();
+  if (!catalogFile) throw new Error('No s’ha trobat el catàleg per crear l’entrenament auto-generat.');
+  const catalogRows = await readSpreadsheetRows(catalogFile);
+  const headers = catalogRows.shift().map((header) => String(header).trim());
+  const catalog = catalogRows.map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])));
+  const focus = formData.getAll('focus');
+  const trainingType = formData.get('trainingType') || 'forca';
+  const count = Math.max(1, Math.min(7, Number(formData.get('generatedWorkoutCount') || 1)));
+  const selected = catalog.filter((exercise) => {
+    if (String(exercise.Actiu).toLocaleLowerCase() !== 'sí') return false;
+    const modality = String(exercise.Modalitat).toLocaleLowerCase();
+    const zones = `${exercise['Zones principals']} ${exercise['Zones secundàries']}`.toLocaleLowerCase();
+    const typeMatches = trainingType === 'mobilitat' ? modality.includes('mobilitat') : trainingType === 'forcaMobilitat' ? modality.includes('força') || modality.includes('mobilitat') : modality.includes('força');
+    return typeMatches && (!focus.length || focus.some((zone) => zones.includes(zone)));
+  });
+  if (!selected.length) throw new Error('No hi ha exercicis que coincideixin amb el qüestionari.');
+  const repetitions = await readCurrentRepetitions();
+  const ownHeaders = ['Numero', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Pes', 'Material', 'Descripció', 'Link', 'Exercici ID'];
+  const generatedRows = [];
+  for (let day = 1; day <= count; day += 1) {
+    chooseDailyExercises(selected, Math.max(1, Math.floor(Number(formData.get('duration') || 30) / 5)))
+      .forEach((exercise) => {
+        const mapped = applyCurrentRepetition({ id: exercise.ID, nameCa: exercise['Nom CA'] }, repetitions.rows, repetitions.headers);
+        generatedRows.push([day, exercise.Modalitat || 'Força', exercise['Nom CA'] || '', mapped.totalSeries || 1, mapped.reps || '', mapped.weight || '', exercise['Material requerit'] || 'Cap', exercise['Instruccions CA'] || '', exercise.Link || '', exercise.ID || '']);
+      });
+  }
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([ownHeaders, ...generatedRows]), 'Entrenament auto-generat');
+  const content = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const uploadedFile = await uploadSpreadsheet(fileName, content, null, directoryId);
+  window.driveFiles = [...files, uploadedFile];
+  return uploadedFile;
+}
+
 async function chooseNextOwnTrainingDay(availableDays) {
   const orderedDays = [...availableDays].sort((first, second) => Number(first) - Number(second));
   const directoryId = extractGoogleId(directoryInput.value.trim());
@@ -378,8 +509,11 @@ async function chooseNextOwnTrainingDay(availableDays) {
 
 async function createWorkoutExercises(formData) {
   workoutDay = '';
-  if (formData.get('mode') !== 'proposat') {
-    const selectedTrainingFile = JSON.parse(localStorage.getItem(TRAINING_FILE_KEY) || 'null');
+  const mode = formData.get('mode');
+  if (mode === 'propio' || mode === 'auto-generat') {
+    const selectedTrainingFile = mode === 'auto-generat'
+      ? await ensureAutoGeneratedTrainingFile(formData)
+      : JSON.parse(localStorage.getItem(TRAINING_FILE_KEY) || 'null');
     if (!selectedTrainingFile?.id) {
       workoutSetupMessage = 'No s’ha trobat el fitxer d’entrenament propi. Comprova el prefix i els permisos de Drive.';
       return [];
@@ -425,10 +559,12 @@ async function createWorkoutExercises(formData) {
         workoutDay = await chooseNextOwnTrainingDay(availableDays);
         const selectedExercises = exercises.filter((exercise) => getExerciseDay(exercise) === workoutDay);
         if (!selectedExercises.length) throw new Error(`No hi ha exercicis per al dia ${workoutDay}.`);
-        return selectedExercises;
+        const repetitions = await readCurrentRepetitions();
+        return selectedExercises.map((exercise) => applyCurrentRepetition(exercise, repetitions.rows, repetitions.headers));
       }
       workoutDay = '';
-      return exercises;
+      const repetitions = await readCurrentRepetitions();
+      return exercises.map((exercise) => applyCurrentRepetition(exercise, repetitions.rows, repetitions.headers));
     } catch (error) {
       workoutSetupMessage = `No s’ha pogut obrir l’entrenament propi. ${error.message}`;
       return [];
@@ -450,7 +586,7 @@ async function createWorkoutExercises(formData) {
     catalogExercises = exercises;
     updateCatalogZones(exercises);
     const trainingType = formData.get('trainingType') || 'forca';
-    const focus = focusMap[formData.get('focus') || 'fullbody'];
+    const focus = formData.getAll('focus');
     const hasEquipment = formData.get('hasEquipment') === 'si';
     const painZones = formData.getAll('painZone');
     workoutCriteria = { trainingType, focus, hasEquipment, painZones };
@@ -462,7 +598,7 @@ async function createWorkoutExercises(formData) {
         : trainingType === 'forcaMobilitat'
           ? modality.includes('força') || modality.includes('mobilitat')
           : modality.includes('força');
-      const focusMatches = focus === 'full body' || zones.includes(focus.split(' ')[0]);
+      const focusMatches = !focus.length || focus.some((zone) => zones.includes(zone));
       const painMatches = !painZones.length || painZones.some((zone) => zones.includes(zone));
       const equipmentMatches = hasEquipment || String(exercise['Material requerit']).toLocaleLowerCase() === 'cap';
       return typeMatches && focusMatches && painMatches && equipmentMatches;
@@ -470,7 +606,7 @@ async function createWorkoutExercises(formData) {
     const duration = Number(formData.get('duration') || 15);
     const source = chooseDailyExercises(selected.length ? selected : exercises, Math.max(1, Math.floor(duration / 5)));
 
-    return source.map((exercise, index) => ({
+    const result = source.map((exercise, index) => ({
       type: exercise.Modalitat || 'Entrenament',
       videoUrl: exercise.Link || exercise['Enllaç vídeo'] || exercise['Vídeo'] || '',
       nameCa: exercise['Nom CA'] || 'Exercici sense nom',
@@ -483,6 +619,8 @@ async function createWorkoutExercises(formData) {
       source: 'catalog',
       zones: `${exercise['Zones principals'] || ''};${exercise['Zones secundàries'] || ''}`
     }));
+    const repetitions = await readCurrentRepetitions();
+    return result.map((exercise) => applyCurrentRepetition(exercise, repetitions.rows, repetitions.headers));
   } catch (error) {
     console.warn('No s’ha pogut llegir el catàleg d’exercicis.', error);
     workoutSetupMessage = `No s’ha pogut llegir el catàleg. ${error.message}`;
@@ -607,6 +745,7 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
 
   const directoryId = extractGoogleId(directoryInput.value.trim());
   if (!directoryId) return;
+  await ensureCurrentRepetitionsFile();
 
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -616,7 +755,7 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
   const existingFile = files.find((file) => file.name === fileName);
   workoutLogFile = existingFile || null;
   const templateFile = files.find((file) => file.name.toLocaleLowerCase().startsWith('plantilla log entrenament'));
-  if (formData.get('mode') === 'proposat') {
+  if (formData.get('mode') === 'pim-pam') {
     const catalogFile = files.find((file) => file.mimeType !== 'application/vnd.google-apps.folder'
       && file.name.toLocaleLowerCase().startsWith('catàleg exercicis'));
     if (catalogFile) {
@@ -673,8 +812,8 @@ async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
     'Dia entrenament': workoutDay,
     'Núm. entrenament': workoutDay,
     Dia: workoutDay,
-    'Tipus entrenament': exercise.source === 'catalog' ? 'Proposat' : 'Propi',
-    'Origen entrenament': exercise.source === 'catalog' ? 'Catàleg exercicis' : 'Entrenament propi',
+    'Tipus entrenament': exercise.source === 'catalog' ? 'Pim pam' : 'Entrenament propi',
+    'Origen entrenament': exercise.source === 'catalog' ? 'Catàleg exercicis' : 'Fitxer d’entrenament',
     'Ordre exercici': currentExerciseIndex + 1,
     'Exercici ID': exercise.id || '',
     Exercici: exercise.nameCa || '',
@@ -797,7 +936,7 @@ async function resumeWorkout(state) {
   workoutTotalSeconds = Number(state.totalSeconds) || 1800;
   workoutStartedAt = Number(state.startedAt) || Date.now();
   const formData = new FormData();
-  formData.set('mode', workoutExercises[0]?.source === 'catalog' ? 'proposat' : 'propio');
+  formData.set('mode', workoutExercises[0]?.source === 'catalog' ? 'pim-pam' : 'propio');
   try {
     await ensureMonthlyTrainingLog(workoutExercises, formData);
   } catch (error) {
@@ -1321,6 +1460,11 @@ function initApp() {
         weight: document.getElementById('completed-weight').value.trim(),
         discomfort: document.getElementById('completed-discomfort').value.trim()
       });
+      await maybeUpdateCurrentRepetitions(
+        exercise,
+        document.getElementById('completed-reps').value.trim(),
+        document.getElementById('completed-weight').value.trim()
+      );
     } catch (error) {
       showWorkoutSetupError(`No s’ha pogut guardar aquesta sèrie. ${error.message}`);
       return;
@@ -1333,6 +1477,7 @@ function initApp() {
     emptyExerciseDialog.close();
     try {
       await appendWorkoutLogRow(workoutExercises[currentExerciseIndex], currentSeriesIndex + 1, true);
+      await maybeUpdateCurrentRepetitions(workoutExercises[currentExerciseIndex], '', '');
     } catch (error) {
       showWorkoutSetupError(`No s’ha pogut guardar aquesta sèrie. ${error.message}`);
       return;

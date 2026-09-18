@@ -124,20 +124,29 @@
 
           <form id="trainer-form" class="stack-form">
             <div class="question-group">
-              <label>Vols accedir a un entrenament propi o que te'n proposi un?</label>
-              <div class="option-grid two">
+              <label>Quin tipus d'entrenament vols fer?</label>
+              <div class="option-grid three">
                 <label class="option-card">
                   <input type="radio" name="mode" value="propio" checked />
                   <span>Entrenament propi</span>
                 </label>
                 <label class="option-card">
-                  <input type="radio" name="mode" value="proposat" />
-                  <span>Que me'n proposis un</span>
+                  <input type="radio" name="mode" value="auto-generat" />
+                  <span>Entrenament auto-generat</span>
+                </label>
+                <label class="option-card">
+                  <input type="radio" name="mode" value="pim-pam" />
+                  <span>Pim pam</span>
                 </label>
               </div>
             </div>
 
             <div id="proposed-fields" class="hidden">
+              <div id="generated-workout-count-fields" class="question-group hidden">
+                <label for="generated-workout-count">Quants entrenaments diferents vols?</label>
+                <input id="generated-workout-count" name="generatedWorkoutCount" type="number" min="1" max="7" value="1" />
+              </div>
+
               <div class="question-group">
                 <label>Tens material?</label>
                 <div class="option-grid two">
@@ -164,20 +173,19 @@
 
               <div class="question-group">
                 <label>Tipus d'entrenament</label>
-                <div class="option-grid four">
+                <div class="option-grid three">
                   <label class="option-card">
-                    <input type="radio" name="focus" value="superior" />
+                    <input type="checkbox" name="focus" value="superior" />
                     <span>Tronc superior</span>
                   </label>
                   <label class="option-card">
-                    <input type="radio" name="focus" value="inferior" />
+                    <input type="checkbox" name="focus" value="inferior" />
                     <span>Tronc inferior</span>
                   </label>
                   <label class="option-card">
-                    <input type="radio" name="focus" value="core" />
+                    <input type="checkbox" name="focus" value="core" />
                     <span>Core</span>
                   </label>
-                  <label class="option-card"><input type="radio" name="focus" value="fullbody" checked /><span>Fullbody</span></label>
                 </div>
               </div>
 
