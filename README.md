@@ -1,5 +1,19 @@
 # Entrenador personal + Google Sheets
 
+## Catàleg i valoració dels exercicis
+
+El catàleg admet `Actiu` amb `sí`, `no` i `potser`. Tant `sí` com `potser` entren a les propostes. Després d’una sessió, es poden valorar els exercicis `potser` que s’han registrat com a fets. «Més endavant» conserva aquest estat i es torna a preguntar després de tornar a fer l’exercici. «M’agrada» desa `sí`; «No m’agrada» desa `no` al catàleg de Drive.
+
+Per als exercicis descartats del pla auto-generat del mes, es proposa un equivalent de la mateixa modalitat que cobreixi tots els grups musculars originals (grups articulars per a mobilitat), respectant els filtres del qüestionari. Cal confirmar cada substitució. Si s’ajorna, es torna a proposar quan s’obre el pla mensual; l’exercici marcat `no` s’exclou de la sessió. Si no hi ha equivalent, l’app ho indica. Les substitucions afecten les rutines que es faran a partir d’ara; el registre mensual del que ja s’ha fet es conserva. Els valors de pes i repeticions del substitut provenen de `Repeticions actuals`, sense copiar els de l’exercici descartat.
+
+La plantilla nova inclou: `ID`, `Nom CA`, `Nom EN`, `Modalitat`, `Grups musculars`, `Grups articulars`, `Patró de moviment`, `Material`, `Lateralitat`, `Mètriques de registre`, `Instruccions`, `Vídeo / enllaç` i `Actiu`. Es manté la lectura dels noms de columna antics. Per a les zones superior/core/inferior, es conserva `Zona corporal` si existeix; altrament s’infereix dels grups coneguts. Es recomana conservar aquesta columna opcional per a classificacions amb noms especials.
+
+L’Excel local conserva també les columnes anteriors i afegeix els grups articulars dels exercicis de mobilitat a partir de la classificació existent, que es pot refinar manualment. `Actiu` té una llista de validació amb els tres estats. Les preferències existents es conserven.
+
+Per desar valoracions en catàlegs natius de Google Sheets cal tornar a autoritzar Google amb permís d’escriptura de Sheets. Els canvis es desen a les cel·les afectades; en Excel es conserva el llibre amb totes les pestanyes. El fitxer local s’ha de pujar al directori de Drive si es vol utilitzar la versió migrada.
+
+Comprovacions locals del JavaScript amb Edge sense finestra: `powershell -NoProfile -ExecutionPolicy Bypass -File tests/run-catalog-tests.ps1`. El canvi de política només afecta aquest procés de proves. Es validen els camps obligatoris de les files disponibles del catàleg nou, els estats i els ID únics.
+
 > Nota de validació de desplegament: aquesta versió s’ha revisat el 14/09/2026 i està preparada per publicar-se a GitHub Pages amb la branca `main` com a font de desplegament.
 
 Aplicació web per gestionar accés segur amb Google, carregar les dades d’un full de Google Sheets i generar entrenaments personalitzats a partir d’un breu qüestionari.
@@ -20,6 +34,8 @@ Aplicació web per gestionar accés segur amb Google, carregar les dades d’un 
 - Crea `Repeticions actuals.xlsx` i hi desa les sèries, repeticions i pesos per reutilitzar-los en propostes futures.
 - Genera un entrenament automàtic
 - Llegeix el catàleg d’exercicis en format Excel o Google Sheets
+- La columna opcional `Zona corporal` classifica els exercicis com `superior`, `inferior`, `core` o `fullbody`; si falta, es dedueix dels grups musculars o articulars reconeguts.
+- `Material opcional` es mostra a la fitxa de l’exercici. Quan s’indica que no es disposa de material, només es proposen exercicis amb `Material requerit` igual a `Cap` (o equivalent).
 - Crea o actualitza el log mensual `MM.AAAA - Log entrenament.xlsx`
 
 ## Important: arquitectura real a GitHub

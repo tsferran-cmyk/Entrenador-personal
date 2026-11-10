@@ -172,8 +172,8 @@
               </div>
 
               <div class="question-group">
-                <label>Tipus d'entrenament</label>
-                <div class="option-grid three">
+                <label>Zona corporal a treballar</label>
+                <div class="option-grid four">
                   <label class="option-card">
                     <input type="checkbox" name="focus" value="superior" />
                     <span>Tronc superior</span>
@@ -185,6 +185,10 @@
                   <label class="option-card">
                     <input type="checkbox" name="focus" value="core" />
                     <span>Core</span>
+                  </label>
+                  <label class="option-card">
+                    <input type="checkbox" name="focus" value="fullbody" />
+                    <span>Cos sencer</span>
                   </label>
                 </div>
               </div>
@@ -271,7 +275,7 @@
               <div><span>Pes esperat</span><strong id="exercise-weight">-</strong></div>
             </div>
             <div class="exercise-info-grid">
-              <div><span>Material necessari</span><p id="exercise-equipment">Encara no especificat</p></div>
+              <div><span>Material necessari</span><p id="exercise-equipment">Encara no especificat</p><p id="exercise-optional-equipment" class="optional-equipment hidden"></p></div>
               <div><span>Com fer-lo</span><p id="exercise-description">La descripció apareixerà quan el catàleg la proporcioni.</p></div>
             </div>
             <button id="complete-exercise-button" class="button primary full" type="button">Ja he fet l'exercici</button>
@@ -382,6 +386,7 @@
     <script src="https://accounts.google.com/gsi/client" defer></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" defer></script>
     <script src="config.js" defer></script>
+    <script src="catalog.js" defer></script>
     <script src="script.js" defer></script>
   </body>
 </html>

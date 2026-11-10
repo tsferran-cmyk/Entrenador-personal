@@ -617,6 +617,11 @@ select:focus {
   line-height: 1.55;
 }
 
+.exercise-info-grid .optional-equipment {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .calendar-panel {
   display: grid;
   gap: 12px;
