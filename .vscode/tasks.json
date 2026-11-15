@@ -1,0 +1,12 @@
+{
+  "version": "2.0.0",
+  "tasks": [{
+    "label": "Fit Flow: previsualitzar",
+    "type": "shell",
+    "command": "python",
+    "args": ["-m", "http.server", "8000", "--bind", "127.0.0.1"],
+    "options": {"cwd": "${workspaceFolder}"},
+    "problemMatcher": [],
+    "presentation": {"reveal": "always"}
+  }]
+}

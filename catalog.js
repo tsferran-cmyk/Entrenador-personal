@@ -1,13 +1,21 @@
 // Compatibility with the original catalogue and the current catalogue schema.
 function normalizeCatalogExercise(row) {
+  row = Object.fromEntries(Object.entries(row).map(([key, value]) => [key.trim(), value]));
   const value = (...aliases) => getColumnValue(row, aliases);
   const muscles = value('Grups musculars', 'Zones principals');
   const joints = value('Grups articulars');
   return {
     ...row,
     ID: String(value('ID')).trim(),
-    Actiu: value('Actiu'),
-    'Zones principals': muscles || joints,
+    Actiu: value('Actiu') || 'sí',
+    'Nom CA': value('Nom CA'),
+    'Nom EN': value('Nom EN'),
+    Modalitat: value('Modalitat'),
+    'Grups musculars': muscles,
+    'Grups articulars': joints,
+    'Mètriques de registre': value('Mètriques de registre'),
+    catalogRegionInferred: !value('Zona corporal'),
+    'Zones principals': normalizeColumnName(value('Modalitat')).includes('forca') ? muscles : joints || muscles,
     'Zones secundàries': value('Zones secundàries'),
     'Material requerit': value('Material', 'Material requerit'),
     'Instruccions CA': value('Instruccions', 'Instruccions CA'),
@@ -18,11 +26,23 @@ function normalizeCatalogExercise(row) {
 
 function inferCatalogRegion(groups) {
   const tokens = normalizeColumnName(groups);
+  if (/cossencer|fullbody/.test(tokens)) return 'fullbody';
   const regions = [];
   if (/pectoral|dorsal|esquena|delto|espatll|biceps|triceps|brac|colze|canell/.test(tokens)) regions.push('superior');
   if (/abdomin|core|oblic|lumbar|tronc|columna/.test(tokens)) regions.push('core');
-  if (/gluti|glute|quadriceps|isquio|bess|soli|cama|maluc|genoll|turmell|adductor|abductor/.test(tokens)) regions.push('inferior');
+  if (/gluti|glute|quadriceps|isquio|bess|soli|cames?|maluc|genoll|turmell|adductor|abductor/.test(tokens)) regions.push('inferior');
   return regions.length > 1 ? 'fullbody' : regions[0] || '';
+}
+
+// A mixed exercise uses the groups belonging to the requested modality.
+function catalogGroups(exercise, trainingType) {
+  const modality = normalizeColumnName(exercise.Modalitat || exercise.modality || exercise.type || '');
+  const muscles = exercise['Grups musculars'] ?? exercise['Zones principals'] ?? '';
+  const joints = exercise['Grups articulars'] ?? exercise['Zones principals'] ?? '';
+  if (trainingType === 'cardio') return muscles || joints;
+  if (trainingType === 'forca') return modality.includes('forca') ? muscles : '';
+  if (trainingType === 'mobilitat') return modality.includes('mobilitat') ? joints : '';
+  return [modality.includes('forca') ? muscles : '', modality.includes('mobilitat') ? joints : ''].filter(Boolean).join(';');
 }
 
 function isCatalogAvailable(exercise) {
@@ -105,8 +125,9 @@ async function saveExerciseRating(id, rating) {
 
 function equivalentCatalogExercises(original, catalog, criteria) {
   const mobility = normalizeColumnName(original.Modalitat).includes('mobilitat');
-  const groups = (exercise) => getZoneTokens(mobility
-    ? exercise['Grups articulars'] || exercise['Zones principals']
+  const groups = (exercise) => getZoneTokens(criteria
+    ? catalogGroups(exercise, criteria.trainingType)
+    : mobility ? exercise['Grups articulars'] || exercise['Zones principals']
     : exercise['Grups musculars'] || exercise['Zones principals']);
   const required = groups(original);
   if (!required.length) return [];

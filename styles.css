@@ -226,6 +226,22 @@ h2, h3 {
   transform: translateY(-1px);
 }
 
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+input[type='number'] {
+  width: 100%;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
 .button.primary {
   background: linear-gradient(135deg, var(--primary), #9ce9c0);
   color: #0c1723;

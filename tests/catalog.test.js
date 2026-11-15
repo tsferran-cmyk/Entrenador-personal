@@ -1,6 +1,20 @@
 (async () => {
  const results = [];
  function check(name, condition) { if (!condition) throw new Error(name); results.push(name); }
+ const actual = parseExerciseCatalog(window.CATALOG_PREVIEW_ROWS.map(row=>[...row]));
+ check('Actual workbook has 12 columns and 66 valid unique exercises',window.CATALOG_PREVIEW_ROWS[0].length===12&&actual.length===66);
+ check('Schema without Actiu is available by default',actual.every(isCatalogAvailable));
+ const mixed=normalizeCatalogExercise({ID:'mixed','Nom CA':'Mixed',Modalitat:'Força; mobilitat','Grups musculars':'Glutis','Grups articulars':'Espatlla',Material:'Sense material'});
+ const filter={trainingType:'forca',focus:[],painZones:['Glutis'],hasEquipment:false};
+ check('Strength matches muscles',exerciseMatchesCriteria(mixed,filter));
+ check('Strength does not match joints',!exerciseMatchesCriteria(mixed,{...filter,painZones:['Espatlla']}));
+ check('Mobility matches joints',exerciseMatchesCriteria(mixed,{...filter,trainingType:'mobilitat',painZones:['Espatlla']}));
+ check('Mobility does not match muscles',!exerciseMatchesCriteria(mixed,{...filter,trainingType:'mobilitat'}));
+ check('Mobility body region uses joints only',exerciseMatchesCriteria(mixed,{...filter,trainingType:'mobilitat',focus:['superior'],painZones:[]}));
+ check('Strength body region uses muscles only',!exerciseMatchesCriteria(mixed,{...filter,focus:['superior'],painZones:[]}));
+ check('Cardio supports existing conditioning exercise',actual.some(e=>exerciseMatchesCriteria(e,{...filter,trainingType:'cardio',painZones:[],hasEquipment:true})));
+ for(const trainingType of ['forca','mobilitat','forcaMobilitat'])check('Actual catalogue proposes '+trainingType,actual.some(e=>exerciseMatchesCriteria(e,{trainingType,focus:[],painZones:[],hasEquipment:false})));
+ check('Whitespace in headers is accepted',parseExerciseCatalog([['ID','Nom CA','Modalitat','\n Grups musculars\n','Material','Mètriques de registre'],['test','Test','Força','Glutis','Cap','Temps']]).length===1);
  const base = { ID: 'a', 'Nom CA': 'Flexions', Modalitat: 'Força', 'Grups musculars': 'Pectorals', Material: 'Sense material', Actiu: 'potser', Instruccions: 'Prova', 'Vídeo / enllaç': 'https://example.org' };
  const a = normalizeCatalogExercise(base);
  const validRow = {...base, 'Mètriques de registre':'Repeticions'};

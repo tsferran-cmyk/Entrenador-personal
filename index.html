@@ -143,8 +143,9 @@
 
             <div id="proposed-fields" class="hidden">
               <div id="generated-workout-count-fields" class="question-group hidden">
-                <label for="generated-workout-count">Quants entrenaments diferents vols?</label>
-                <input id="generated-workout-count" name="generatedWorkoutCount" type="number" min="1" max="7" value="1" />
+                <label for="generated-workout-count">Quants dies d’entrenament diferents vols aquest mes?</label>
+                <input id="generated-workout-count" name="generatedWorkoutCount" type="number" min="1" max="31" value="1" />
+                <p id="monthly-days-notice" class="simple-copy"></p>
               </div>
 
               <div class="question-group">
@@ -171,8 +172,36 @@
                 </div>
               </div>
 
-              <div class="question-group">
-                <label>Zona corporal a treballar</label>
+              <div id="monthly-type-fields" class="question-group hidden">
+                <label>Dies per tipus d’exercici</label>
+                <div class="option-grid three">
+                  <label>Força<input type="number" name="daysForca" min="0" max="31" value="1" /></label>
+                  <label>Mobilitat<input type="number" name="daysMobilitat" min="0" max="31" value="0" /></label>
+                  <label>Càrdio<input type="number" name="daysCardio" min="0" max="31" value="0" /></label>
+                </div>
+              </div>
+
+              <div id="single-type-fields" class="question-group">
+                <label>Tipus d’exercici</label>
+                <div class="option-grid three">
+                  <label class="option-card"><input type="radio" name="trainingType" value="forca" checked /><span>Força</span></label>
+                  <label class="option-card"><input type="radio" name="trainingType" value="mobilitat" /><span>Mobilitat</span></label>
+                  <label class="option-card"><input type="radio" name="trainingType" value="cardio" /><span>Càrdio</span></label>
+                </div>
+              </div>
+
+              <div id="monthly-strength-fields" class="question-group hidden">
+                <label>Dies de força per zona corporal</label>
+                <div class="option-grid four">
+                  <label>Tronc superior<input type="number" name="daysSuperior" min="0" max="31" value="0" /></label>
+                  <label>Tronc inferior<input type="number" name="daysInferior" min="0" max="31" value="0" /></label>
+                  <label>Core<input type="number" name="daysCore" min="0" max="31" value="0" /></label>
+                  <label>Cos sencer<input type="number" name="daysFullbody" min="0" max="31" value="1" /></label>
+                </div>
+              </div>
+
+              <div id="single-strength-fields" class="question-group">
+                <label>Zona corporal a treballar (força)</label>
                 <div class="option-grid four">
                   <label class="option-card">
                     <input type="checkbox" name="focus" value="superior" />
@@ -193,14 +222,7 @@
                 </div>
               </div>
 
-              <div class="question-group">
-                <label>Tipus d'exercici</label>
-                <div class="option-grid three">
-                  <label class="option-card"><input type="radio" name="trainingType" value="forca" /><span>Força</span></label>
-                  <label class="option-card"><input type="radio" name="trainingType" value="mobilitat" /><span>Mobilitat</span></label>
-                  <label class="option-card"><input type="radio" name="trainingType" value="forcaMobilitat" checked /><span>Força + mobilitat</span></label>
-                </div>
-              </div>
+              <p id="allocation-status" class="simple-copy" role="status" aria-live="polite"></p>
 
               <div class="question-group">
                 <label>Dolència a tractar?</label>

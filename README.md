@@ -1,5 +1,73 @@
 # Entrenador personal + Google Sheets
 
+## Plans mensuals i Pim pam
+
+L'entrenament auto-generat correspon al mes natural a Europa/Madrid. Per crear
+un pla nou no es poden demanar més rutines que dies restants, incloent-hi avui:
+el 29 de novembre en queden 2; el 23 en queden 8. Un pla ja creat es pot tornar
+a obrir fins al final del seu mes. El mes següent es genera un fitxer nou i
+es conserva l'anterior com a històric. Una sessió oberta també caduca en canviar de mes.
+
+El formulari demana dies totals, material, durada, dies de força/mobilitat/càrdio
+i, per als dies de força, dies per zona corporal. Les modalitats han de sumar
+el total i les zones han de sumar els dies de força. Cada rutina té la seva
+modalitat i zona; no es barregen els filtres de totes les rutines en obrir-ne una.
+Si el catàleg no permet crear prou rutines diferents, s'indica l'error.
+Els fitxers mensuals antics, sense la nova distribució, demanen confirmar-ne la regeneració.
+
+Pim pam genera una sessió: primer modalitat i, si és força, zones corporals.
+Força + mobilitat ja no és una opció del qüestionari.
+
+A `demo.html`, el camp «Data per provar el canvi de mes» permet comprovar
+els exemples sense OAuth. La demo reutilitza el generador i les validacions
+de l'aplicació; el fitxer i els registres es mantenen en memòria.
+
+Proves locals: `tests/run-catalog-tests.ps1`,
+`tests/run-workout-ui-tests.ps1`, `tests/run-workout-ui-tests.ps1 -Monthly`
+i `tests/run-workout-ui-tests.ps1 -Demo`.
+
+## Catàleg actual: 12 columnes
+
+El catàleg local té 66 exercicis i les columnes, en aquest ordre:
+`ID`, `Nom CA`, `Nom EN`, `Modalitat`, `Grups musculars`, `Grups articulars`,
+`Patró de moviment`, `Material`, `Lateralitat`, `Mètriques de registre`,
+`Instruccions`, `Vídeo / enllaç`.
+
+Cal informar ID únic, nom català, modalitat, material i mètriques. Força exigeix
+grups musculars; mobilitat exigeix grups articulars; una modalitat combinada
+exigeix tots dos. Els filtres utilitzen els grups de la modalitat escollida.
+Cardio també accepta la classificació existent `Condicionament`.
+Els grups múltiples se separen amb punt i coma. `Instruccions` és text lliure;
+es poden incloure traduccions dins de la mateixa cel·la (no es tradueix automàticament).
+
+`Actiu` és opcional per compatibilitat: si falta, tots els exercicis estan disponibles.
+Les valoracions sí/no/potser continuen funcionant en catàlegs que conservin aquesta
+columna. Les columnes antigues i les preferències originals es conserven a
+`backups/Catàleg exercicis.original.xlsx`.
+
+La migració és local: per utilitzar el nou catàleg a l'aplicació connectada cal
+actualitzar també el fitxer corresponent de Google Drive.
+
+### Previsualització dins de Visual Studio Code
+
+Per provar les tres opcions d'entrenament sense OAuth, obre
+`http://127.0.0.1:8000/demo.html` al Simple Browser. Aquesta pàgina reutilitza
+la interfície original, el catàleg local i un entrenament propi d'exemple.
+El registre i les repeticions de demostració es mantenen en memòria i es perden
+en recarregar. No es connecta a Google Drive.
+
+1. Obre aquesta carpeta a VS Code.
+2. Executa **Terminal > Run Task > Fit Flow: previsualitzar**.
+3. Prem `Ctrl+Shift+P`, executa **Simple Browser: Show** i introdueix
+   `http://127.0.0.1:8000/preview.html`.
+
+La previsualització funciona sense Google ni biblioteques externes. Utilitza
+els mateixos filtres que el programa i una còpia de les dades de l'Excel.
+Després d'editar l'Excel, executa `python tools/migrate_catalog.py` per actualitzar-la.
+El programa complet és a `http://127.0.0.1:8000/index.html` i requereix Google.
+
+La documentació històrica següent descriu també el format anterior amb `Actiu`.
+
 ## Catàleg i valoració dels exercicis
 
 El catàleg admet `Actiu` amb `sí`, `no` i `potser`. Tant `sí` com `potser` entren a les propostes. Després d’una sessió, es poden valorar els exercicis `potser` que s’han registrat com a fets. «Més endavant» conserva aquest estat i es torna a preguntar després de tornar a fer l’exercici. «M’agrada» desa `sí`; «No m’agrada» desa `no` al catàleg de Drive.

@@ -53,10 +53,14 @@ let workoutLogFile = null;
 let workoutLogHeaders = [];
 let workoutSessionId = '';
 let workoutDay = '';
+let workoutMode = 'propio';
+let workoutPlanMonth = '';
+let loadedMonthlySpec = null;
 let excludedReplacementIds = new Set();
 let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
 const trainingMap = {
+  cardio: { label: 'Cardio', intro: 'Treball cardiovascular.', blocks: [] },
   forca: {
     label: 'Força',
     intro: 'Treball principal de força i hipertrofia.',
@@ -215,6 +219,136 @@ function toggleModeFields() {
   proposedFields.classList.toggle('hidden', mode === 'propio');
   generatedWorkoutCountFields?.classList.toggle('hidden', mode !== 'auto-generat');
   togglePainFields();
+  updateWorkoutAllocationFields();
+  if (catalogExercises.length) updateCatalogZones(catalogExercises);
+}
+
+function trainingCalendar(date = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en', {
+    timeZone: 'Europe/Madrid', year: 'numeric', month: 'numeric', day: 'numeric'
+  }).formatToParts(date).map(part => [part.type, part.value]));
+  const year = Number(parts.year), month = Number(parts.month), day = Number(parts.day);
+  return { year, month, day, key: `${year}.${String(month).padStart(2, '0')}`,
+    remaining: new Date(Date.UTC(year, month, 0)).getUTCDate() - day + 1 };
+}
+
+function monthlyPlanSpec(formData, date, checkCapacity = true) {
+  const calendar = trainingCalendar(date);
+  const integer = name => {
+    const raw = formData.get(name);
+    const value = Number(raw);
+    if (raw === null || String(raw).trim() === '' || !Number.isInteger(value) || value < 0 || value > 31)
+      throw new Error('Indica un nombre enter de dies entre 0 i 31 a tots els camps.');
+    return value;
+  };
+  const total = integer('generatedWorkoutCount');
+  if (total < 1) throw new Error('Cal demanar almenys un dia d’entrenament.');
+  if (checkCapacity && total > calendar.remaining)
+    throw new Error(`Només queden ${calendar.remaining} dies disponibles aquest mes, inclòs avui. No es poden generar ${total} entrenaments.`);
+  const types = { forca: integer('daysForca'), mobilitat: integer('daysMobilitat'), cardio: integer('daysCardio') };
+  if (Object.values(types).reduce((sum, n) => sum + n, 0) !== total)
+    throw new Error(`Els dies de força, mobilitat i càrdio han de sumar ${total}.`);
+  const zones = types.forca ? { superior: integer('daysSuperior'), inferior: integer('daysInferior'), core: integer('daysCore'), fullbody: integer('daysFullbody') } : {};
+  if (Object.values(zones).reduce((sum, n) => sum + n, 0) !== types.forca)
+    throw new Error(`Els dies de les zones corporals han de sumar ${types.forca}, el total de dies de força.`);
+  const routines = [];
+  for (const [zone, count] of Object.entries(zones)) for (let i = 0; i < count; i++) routines.push({ trainingType: 'forca', focus: [zone] });
+  for (const type of ['mobilitat', 'cardio']) for (let i = 0; i < types[type]; i++) routines.push({ trainingType: type, focus: [] });
+  return { month: calendar.key, total, types, zones, routines,
+    duration: Number(formData.get('duration') || 30), hasEquipment: formData.get('hasEquipment') === 'si',
+    painZones: formData.get('hasPain') === 'si' ? formData.getAll('painZone').sort() : [] };
+}
+
+function updateWorkoutAllocationFields() {
+  const form = document.getElementById('trainer-form');
+  if (!form) return;
+  const monthly = form.elements.mode.value === 'auto-generat';
+  const single = form.elements.mode.value === 'pim-pam';
+  const strength = single && form.elements.trainingType.value === 'forca';
+  const show = (id, visible) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.classList.toggle('hidden', !visible);
+    element.querySelectorAll('input').forEach(input => input.disabled = !visible);
+  };
+  show('generated-workout-count-fields', monthly);
+  show('monthly-type-fields', monthly);
+  show('single-type-fields', single);
+  show('monthly-strength-fields', monthly && Number(form.elements.daysForca.value) > 0);
+  show('single-strength-fields', strength);
+  const calendar = trainingCalendar();
+  document.getElementById('generated-workout-count').max = calendar.remaining;
+  document.getElementById('monthly-days-notice').textContent = `Mes ${calendar.key}: queden ${calendar.remaining} dies, inclòs avui. El pla caduca en acabar el mes.`;
+  const status = document.getElementById('allocation-status');
+  let valid = true;
+  if (monthly) {
+    try {
+      const data = new FormData(form);
+      const spec = monthlyPlanSpec(data, undefined, false);
+      const existing = JSON.stringify(spec) === JSON.stringify(loadedMonthlySpec);
+      if (!existing) monthlyPlanSpec(data);
+      document.getElementById('generated-workout-count').max = existing ? Math.max(calendar.remaining, spec.total) : calendar.remaining;
+      status.textContent = existing ? `Pla d’aquest mes ja creat: ${spec.total} dies.` : `Distribució correcta: ${spec.total} dies.`;
+    }
+    catch (error) { status.textContent = error.message; valid = false; }
+  } else status.textContent = '';
+  form.querySelector('button[type="submit"]').disabled = !valid;
+}
+
+function monthlyPlanRows(catalog, spec, repetitions) {
+  const headers = ['Numero', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Pes', 'Material', 'Material opcional', 'Descripció', 'Link', 'Exercici ID', 'Zona corporal', 'Zones principals', 'Zones secundàries', 'Fase', 'Modalitat', 'Grups musculars', 'Grups articulars', 'Modalitat assignada', 'Zona assignada', 'Mes del pla', 'Configuració del pla'];
+  const rows = [], used = new Set();
+  spec.routines.forEach((routine, index) => {
+    const criteria = { ...routine, hasEquipment: spec.hasEquipment, painZones: spec.painZones };
+    const pool = catalog.filter(exercise => isCatalogAvailable(exercise) && exerciseMatchesCriteria(exercise, criteria));
+    if (!pool.length) throw new Error(`No hi ha exercicis per al dia ${index + 1}: ${trainingMap[routine.trainingType].label}${routine.focus.length ? ` (${focusMap[routine.focus[0]]})` : ''}, amb els filtres indicats.`);
+    let selected = chooseWorkoutExercises(pool, spec.duration);
+    const signature = items => `${routine.trainingType}:` + items.map(item => item.exercise.ID).sort().join('|');
+    if (used.has(signature(selected))) {
+      // Enumerate only until finding a new exercise set; at most 31 sets are used.
+      const size = selected.length;
+      const positions = Array.from({ length: size }, (_, i) => i);
+      let found = false;
+      while (positions.length) {
+        const alternative = positions.map(i => ({ exercise: pool[i], phase: 'Entrenament principal' }));
+        if (!used.has(signature(alternative))) { selected = alternative; found = true; break; }
+        let cursor = size - 1;
+        while (cursor >= 0 && positions[cursor] === pool.length - size + cursor) cursor--;
+        if (cursor < 0) break;
+        positions[cursor]++;
+        for (let j = cursor + 1; j < size; j++) positions[j] = positions[j - 1] + 1;
+      }
+      if (!found) throw new Error(`El catàleg no permet generar ${spec.total} entrenaments diferents amb aquesta distribució. Redueix els dies o amplia el catàleg.`);
+    }
+    used.add(signature(selected));
+    selected.forEach(({ exercise, phase }) => {
+      const mapped = applyCurrentRepetition({ id: exercise.ID, nameCa: exercise['Nom CA'] }, repetitions.rows, repetitions.headers);
+      rows.push([index + 1, `${phase} - ${trainingMap[routine.trainingType].label}`, exercise['Nom CA'], mapped.totalSeries || 1, mapped.reps || '', mapped.weight || '', exercise['Material requerit'], exercise['Material opcional'] || '', exercise['Instruccions CA'], exercise.Link, exercise.ID, inferCatalogRegion(catalogGroups(exercise, routine.trainingType)), catalogGroups(exercise, routine.trainingType), '', phase, exercise.Modalitat, exercise['Grups musculars'], exercise['Grups articulars'], routine.trainingType, routine.focus[0] || '', spec.month, JSON.stringify(spec)]);
+    });
+  });
+  return [headers, ...rows];
+}
+
+async function restoreMonthlyPlanSettings(files) {
+  loadedMonthlySpec = null;
+  const file = files.find(item => item.name === getCurrentMonthAutoFileName());
+  if (!file) return;
+  const rows = await readSpreadsheetRows(file);
+  const column = rows[0]?.indexOf('Configuració del pla');
+  if (!(column >= 0) || !rows[1]?.[column]) return;
+  const spec = JSON.parse(rows[1][column]);
+  if (spec.month !== trainingCalendar().key || !spec.types || !spec.zones) return;
+  const form = document.getElementById('trainer-form');
+  const values = { generatedWorkoutCount: spec.total, daysForca: spec.types.forca, daysMobilitat: spec.types.mobilitat, daysCardio: spec.types.cardio,
+    daysSuperior: spec.zones.superior || 0, daysInferior: spec.zones.inferior || 0, daysCore: spec.zones.core || 0, daysFullbody: spec.zones.fullbody || 0,
+    duration: spec.duration, hasEquipment: spec.hasEquipment ? 'si' : 'no', hasPain: spec.painZones.length ? 'si' : 'no' };
+  for (const [name, value] of Object.entries(values)) form.elements[name].value = String(value);
+  if (!catalogExercises.length) catalogExercises = await loadExerciseCatalog();
+  updateCatalogZones(catalogExercises, Object.keys(spec.types).filter(type => spec.types[type] > 0));
+  form.querySelectorAll('[name="painZone"]').forEach(input => input.checked = spec.painZones.some(zone => normalizeColumnName(zone) === normalizeColumnName(input.value)));
+  loadedMonthlySpec = spec;
+  togglePainFields();
+  updateWorkoutAllocationFields();
 }
 
 function togglePainFields() {
@@ -222,23 +356,22 @@ function togglePainFields() {
   painFields?.classList.toggle('hidden', !hasPain);
 }
 
-function updateCatalogZones(exercises) {
-  const zones = new Set();
-  exercises.forEach((exercise) => {
-    `${exercise['Grups musculars'] || exercise['Zones principals'] || ''};${exercise['Grups articulars'] || exercise['Zones secundàries'] || ''}`
-      .split(';')
-      .map((zone) => zone.trim())
-      .filter(Boolean)
-      .forEach((zone) => zones.add(zone));
+function updateCatalogZones(exercises, requestedTypes) {
+  const form = document.getElementById('trainer-form');
+  const monthly = form?.elements.mode.value === 'auto-generat';
+  const types = requestedTypes || (monthly
+    ? [['forca', 'daysForca'], ['mobilitat', 'daysMobilitat'], ['cardio', 'daysCardio']].filter(([, name]) => Number(form.elements[name].value) > 0).map(([type]) => type)
+    : [form?.elements.trainingType.value || 'forca']);
+  const container = document.getElementById('catalog-zones');
+  if (!container) return;
+  const checked = new Set([...container.querySelectorAll('input:checked')].map(input => normalizeColumnName(input.value)));
+  const zones = new Set(exercises.flatMap(exercise => types.flatMap(type => catalogGroups(exercise, type).split(/[;,/]/).map(zone => zone.trim()).filter(Boolean))));
+  container.replaceChildren();
+  [...zones].sort().forEach(zone => {
+    const label = document.createElement('label');label.className = 'option-card';
+    const input = document.createElement('input');input.type = 'checkbox';input.name = 'painZone';input.value = zone.toLocaleLowerCase();input.checked = checked.has(normalizeColumnName(zone));
+    const span = document.createElement('span');span.textContent = zone;label.append(input, span);container.append(label);
   });
-  const zoneContainer = document.getElementById('catalog-zones');
-  if (!zoneContainer || !zones.size) return;
-  zoneContainer.innerHTML = [...zones].map((zone) => `
-    <label class="option-card">
-      <input type="checkbox" name="painZone" value="${zone.toLocaleLowerCase()}" />
-      <span>${zone}</span>
-    </label>
-  `).join('');
 }
 
 function createWorkoutPlan(formData) {
@@ -302,11 +435,11 @@ function downloadSpreadsheetTemplate(type) {
   }
 
   const ownHeaders = ['Numero', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Descans', 'Pes', 'Material', 'Descripció', 'Link'];
-  const catalogHeaders = ['ID', 'Nom CA', 'Nom EN', 'Modalitat', 'Grups musculars', 'Grups articulars', 'Patró de moviment', 'Material', 'Lateralitat', 'Mètriques de registre', 'Instruccions', 'Vídeo / enllaç', 'Actiu'];
+  const catalogHeaders = ['ID', 'Nom CA', 'Nom EN', 'Modalitat', 'Grups musculars', 'Grups articulars', 'Patró de moviment', 'Material', 'Lateralitat', 'Mètriques de registre', 'Instruccions', 'Vídeo / enllaç'];
   const headers = type === 'propi' ? ownHeaders : catalogHeaders;
   const example = type === 'propi'
     ? [1, 'Força', 'Exemple d’exercici', 3, '8-10', '60"', 60, 'Material', 'Descriu aquí com fer-lo.', 'https://...']
-    : ['EX001', 'Exemple d’exercici', 'Example exercise', 'Força', 'Pectorals', '', 'Empenta', 'Sense material', 'Bilateral', 'Sèries; repeticions', 'Descriu aquí com fer-lo.', 'https://...', 'potser'];
+    : ['EX001', 'Exemple d’exercici', 'Example exercise', 'Força', 'Pectorals', '', 'Empenta', 'Sense material', 'Bilateral', 'Sèries; repeticions', 'Descriu aquí com fer-lo.', 'https://...'];
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([headers, example]);
   XLSX.utils.book_append_sheet(workbook, sheet, type === 'propi' ? 'Entrenament propi' : 'Catàleg');
@@ -378,8 +511,8 @@ function getExerciseDay(exercise) {
   return match ? match[0] : value;
 }
 
-function getCurrentMonthAutoFileName(date = new Date()) {
-  return `Entrenament auto-generat ${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.xlsx`;
+function getCurrentMonthAutoFileName(date) {
+  return `Entrenament auto-generat ${trainingCalendar(date).key}.xlsx`;
 }
 
 function getExerciseRepetitionKey(exercise) {
@@ -465,60 +598,36 @@ async function maybeUpdateCurrentRepetitions(exercise, reps, weight) {
 }
 
 async function ensureAutoGeneratedTrainingFile(formData) {
+  const spec = monthlyPlanSpec(formData, undefined, false);
   const directoryId = extractGoogleId(directoryInput.value.trim());
-  if (!directoryId) throw new Error('No s’ha definit el directori de Google Drive.');
+  if (!directoryId) throw new Error('Cal indicar el directori de Google Drive.');
   const files = await collectDriveFiles(directoryId);
   const fileName = getCurrentMonthAutoFileName();
-  const existingFile = files.find((file) => file.name === fileName);
-  const focus = formData.getAll('focus');
-  const trainingType = formData.get('trainingType') || 'forca';
-  const criteria = {
-    trainingType,
-    focus,
-    painZones: formData.getAll('painZone'),
-    hasEquipment: formData.get('hasEquipment') === 'si'
-  };
+  const existingFile = files.find(file => file.name === fileName);
   if (existingFile) {
-    const existingRows = await readSpreadsheetRows(existingFile);
-    const existingHeaders = existingRows.shift()?.map((header) => String(header).trim()) || [];
-    const existingExercises = existingRows.map((row) => Object.fromEntries(
-      existingHeaders.map((header, index) => [header, row[index] ?? ''])
-    ));
-    if (existingExercises.some((exercise) => exerciseMatchesCriteria(exercise, criteria))) {
-      await confirmMonthlyReplacements(existingFile, await loadExerciseCatalog(), criteria);
+    const rows = await readSpreadsheetRows(existingFile);
+    const configColumn = rows[0].indexOf('Configuració del pla');
+    if (configColumn >= 0 && rows[1]?.[configColumn] === JSON.stringify(spec)) {
+      await confirmMonthlyReplacements(existingFile, await loadExerciseCatalog(), null);
+      loadedMonthlySpec = spec;
       return existingFile;
     }
-  } else if (!window.confirm(`No has definit encara l’entrenament auto-generat del mes. Vols crear ${fileName}?`)) {
-    throw new Error('No s’ha creat cap entrenament auto-generat.');
+    monthlyPlanSpec(formData);
+    if (!window.confirm('La distribució del pla mensual ha canviat. Vols substituir les rutines futures? El registre dels entrenaments fets es conserva.')) throw new Error('Es conserva el pla mensual anterior.');
   }
-  const catalogFile = findCatalogFile();
-  if (!catalogFile) throw new Error('No s’ha trobat el catàleg per crear l’entrenament auto-generat.');
-  const catalogRows = await readSpreadsheetRows(catalogFile);
-  const catalog = parseExerciseCatalog(catalogRows);
-  const count = Math.max(1, Math.min(7, Number(formData.get('generatedWorkoutCount') || 1)));
-  const selected = catalog.filter((exercise) => (
-    isCatalogAvailable(exercise) && exerciseMatchesCriteria(exercise, criteria)
-  ));
-  if (!selected.length) throw new Error('No hi ha exercicis que coincideixin amb el qüestionari.');
-  const repetitions = await readCurrentRepetitions();
-  const ownHeaders = ['Numero', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Pes', 'Material', 'Material opcional', 'Descripció', 'Link', 'Exercici ID', 'Zona corporal', 'Zones principals', 'Zones secundàries', 'Fase', 'Modalitat'];
-  const generatedRows = [];
-  for (let day = 1; day <= count; day += 1) {
-    chooseWorkoutExercises(selected, Number(formData.get('duration') || 30))
-      .forEach(({ exercise, phase }) => {
-        const mapped = applyCurrentRepetition({ id: exercise.ID, nameCa: exercise['Nom CA'] }, repetitions.rows, repetitions.headers);
-        generatedRows.push([day, `${phase} - ${exercise.Modalitat || 'Força'}`, exercise['Nom CA'] || '', mapped.totalSeries || 1, mapped.reps || '', mapped.weight || '', exercise['Material requerit'] || 'Cap', exercise['Material opcional'] || '', exercise['Instruccions CA'] || '', exercise.Link || '', exercise.ID || '', exercise['Zona corporal'] || '', exercise['Zones principals'] || '', exercise['Zones secundàries'] || '', exercise.Fase || '', exercise.Modalitat || '']);
-      });
-  }
+  monthlyPlanSpec(formData);
+  const catalog = await loadExerciseCatalog();
+  const rows = monthlyPlanRows(catalog, spec, await readCurrentRepetitions());
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([ownHeaders, ...generatedRows]), 'Entrenament auto-generat');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Entrenament auto-generat');
   const content = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
   const uploadedFile = await uploadSpreadsheet(fileName, content, existingFile?.id || null, directoryId);
-  window.driveFiles = [...files.filter((file) => file.id !== uploadedFile.id), uploadedFile];
+  loadedMonthlySpec = spec;
+  window.driveFiles = [...files.filter(file => file.id !== uploadedFile.id), uploadedFile];
   return uploadedFile;
 }
 
-async function chooseNextOwnTrainingDay(availableDays) {
+async function chooseNextOwnTrainingDay(availableDays, mode = 'propio') {
   const orderedDays = [...availableDays].sort((first, second) => Number(first) - Number(second));
   const directoryId = extractGoogleId(directoryInput.value.trim());
   if (!directoryId) return orderedDays[0];
@@ -534,7 +643,7 @@ async function chooseNextOwnTrainingDay(availableDays) {
     const typeIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Tipus entrenament'));
     const completedIndex = headers.findIndex((header) => normalizeColumnName(header) === normalizeColumnName('Completat'));
     const completedDays = rows
-      .filter((row) => String(row[typeIndex] || '').toLocaleLowerCase() === 'propi'
+      .filter((row) => (mode === 'auto-generat' ? ['auto-generat'] : ['propi', 'entrenament propi']).includes(String(row[typeIndex] || '').toLocaleLowerCase())
         && ['sí', 'si', 'yes', 'completat'].includes(String(row[completedIndex] || '').toLocaleLowerCase()))
       .map((row) => String(row[dayIndex] || '').trim())
       .filter(Boolean);
@@ -594,6 +703,9 @@ async function createWorkoutExercises(formData) {
           bodyRegion: getColumnValue(exercise, ['Zona corporal', 'Segment corporal']),
           zones: `${getColumnValue(exercise, ['Zones principals'])};${getColumnValue(exercise, ['Zones secundàries'])}`,
           modality: getColumnValue(exercise, ['Modalitat']),
+          assignedModality: getColumnValue(exercise, ['Modalitat assignada']),
+          assignedZone: getColumnValue(exercise, ['Zona assignada']),
+          planMonth: getColumnValue(exercise, ['Mes del pla']),
           phase: getColumnValue(exercise, ['Fase']),
           source: 'propi',
         }));
@@ -601,19 +713,14 @@ async function createWorkoutExercises(formData) {
       const currentCatalog = mode === 'auto-generat' ? await loadExerciseCatalog() : [];
       const rejectedIds = new Set(currentCatalog.filter((item) => !isCatalogAvailable(item)).map((item) => item.ID));
       const applicableExercises = mode === 'auto-generat'
-        ? exercises.filter((exercise) => !rejectedIds.has(String(exercise.id)) && exerciseMatchesCriteria(exercise, {
-          trainingType: formData.get('trainingType') || 'forca',
-          focus: formData.getAll('focus'),
-          painZones: formData.getAll('painZone'),
-          hasEquipment: formData.get('hasEquipment') === 'si'
-        }))
+        ? exercises.filter((exercise) => !rejectedIds.has(String(exercise.id)) && exercise.planMonth === trainingCalendar().key)
         : exercises;
       if (!applicableExercises.length) {
         throw new Error('El fitxer auto-generat no té exercicis que coincideixin amb la zona, el tipus d’entrenament i el material seleccionats.');
       }
       const availableDays = [...new Set(applicableExercises.map(getExerciseDay).filter(Boolean))];
       if (availableDays.length) {
-        workoutDay = await chooseNextOwnTrainingDay(availableDays);
+        workoutDay = await chooseNextOwnTrainingDay(availableDays, mode);
         const selectedExercises = applicableExercises.filter((exercise) => getExerciseDay(exercise) === workoutDay);
         if (!selectedExercises.length) throw new Error(`No hi ha exercicis per al dia ${workoutDay}.`);
         const repetitions = await readCurrentRepetitions();
@@ -640,9 +747,9 @@ async function createWorkoutExercises(formData) {
     catalogExercises = exercises;
     updateCatalogZones(exercises);
     const trainingType = formData.get('trainingType') || 'forca';
-    const focus = formData.getAll('focus');
+    const focus = trainingType === 'forca' ? formData.getAll('focus') : [];
     const hasEquipment = formData.get('hasEquipment') === 'si';
-    const painZones = formData.getAll('painZone');
+    const painZones = formData.get('hasPain') === 'si' ? formData.getAll('painZone') : [];
     workoutCriteria = { trainingType, focus, hasEquipment, painZones };
     const selected = exercises.filter((exercise) => exerciseMatchesCriteria(exercise, workoutCriteria));
     if (!selected.length) {
@@ -664,7 +771,7 @@ async function createWorkoutExercises(formData) {
       label: exercise['Nom CA'] || `Exercici ${index + 1}`,
       id: exercise.ID || '',
       source: 'catalog',
-      zones: `${exercise['Zones principals'] || ''};${exercise['Zones secundàries'] || ''}`
+      zones: catalogGroups(exercise, workoutCriteria?.trainingType)
     }));
     const repetitions = await readCurrentRepetitions();
     return result.map((exercise) => applyCurrentRepetition(exercise, repetitions.rows, repetitions.headers));
@@ -718,19 +825,20 @@ function normalizeBodyRegion(value) {
 }
 
 function exerciseMatchesCriteria(exercise, criteria) {
-  const modality = String(exercise.Modalitat || exercise.modality || exercise.type || '').toLocaleLowerCase();
+  const modality = normalizeColumnName(exercise.Modalitat || exercise.modality || exercise.type || '');
   const typeMatches = criteria.trainingType === 'mobilitat'
     ? modality.includes('mobilitat')
+    : criteria.trainingType === 'cardio'
+      ? modality.includes('cardio') || modality.includes('condicionament')
     : criteria.trainingType === 'forcaMobilitat'
-      ? modality.includes('força') || modality.includes('mobilitat')
-      : modality.includes('força');
-  const bodyRegion = normalizeBodyRegion(exercise['Zona corporal'] || exercise.bodyRegion || inferCatalogRegion(exercise['Grups musculars'] || exercise['Grups articulars']));
+      ? modality.includes('forca') || modality.includes('mobilitat')
+      : modality.includes('forca');
+  const groups = catalogGroups(exercise, criteria.trainingType);
+  const bodyRegion = normalizeBodyRegion((!exercise.catalogRegionInferred && exercise['Zona corporal']) || exercise.bodyRegion || inferCatalogRegion(groups));
   const focusMatches = !criteria.focus.length || criteria.focus.some((focus) => (
-    bodyRegion === 'fullbody' || normalizeBodyRegion(focus) === bodyRegion
+    normalizeBodyRegion(focus) === 'fullbody' || bodyRegion === 'fullbody' || normalizeBodyRegion(focus) === bodyRegion
   ));
-  const zones = [exercise['Grups musculars'], exercise['Grups articulars'], exercise['Zones principals'], exercise['Zones secundàries'], exercise.zones]
-    .filter(Boolean)
-    .join(';');
+  const zones = groups;
   const zoneTokens = getZoneTokens(zones);
   const painMatches = !criteria.painZones.length || criteria.painZones.some((zone) => (
     zoneTokens.includes(normalizeColumnName(zone))
@@ -766,7 +874,7 @@ function findReplacementExercise(currentExercise) {
   const usage = getCatalogUsage();
   const candidates = catalogExercises.filter((exercise) => {
     if (exercise.ID === currentId) return false;
-    const candidateZones = getZoneTokens(`${exercise['Grups musculars'] || exercise['Zones principals'] || ''};${exercise['Grups articulars'] || exercise['Zones secundàries'] || ''}`);
+    const candidateZones = getZoneTokens(catalogGroups(exercise, workoutCriteria.trainingType));
     const sharesZone = !currentZones.length || currentZones.some((zone) => candidateZones.includes(zone));
     return sharesZone && exerciseMatchesCriteria(exercise, workoutCriteria);
   });
@@ -774,8 +882,8 @@ function findReplacementExercise(currentExercise) {
     .filter((exercise) => !excludedReplacementIds.has(exercise.ID))
     .filter((exercise) => !workoutExercises.some((item) => item.id === exercise.ID))
     .sort((first, second) => {
-      const firstZones = getZoneTokens(`${first['Zones principals']};${first['Zones secundàries']}`);
-      const secondZones = getZoneTokens(`${second['Zones principals']};${second['Zones secundàries']}`);
+      const firstZones = getZoneTokens(catalogGroups(first, workoutCriteria.trainingType));
+      const secondZones = getZoneTokens(catalogGroups(second, workoutCriteria.trainingType));
       const firstMatch = currentZones.filter((zone) => firstZones.includes(zone)).length;
       const secondMatch = currentZones.filter((zone) => secondZones.includes(zone)).length;
       return secondMatch - firstMatch || Number(usage[first.ID] || 0) - Number(usage[second.ID] || 0);
@@ -841,7 +949,8 @@ async function ensureMonthlyTrainingLog(exercises, formData) {
         const catalog = catalogRows.map((row) => Object.fromEntries(
           catalogHeaders.map((header, index) => [header, row[index] ?? ''])
         ));
-        updateCatalogZones(catalog.map(normalizeCatalogExercise));
+        catalogExercises = catalog.map(normalizeCatalogExercise);
+        updateCatalogZones(catalogExercises);
       } catch (error) {
         console.warn('No s’han pogut carregar les zones del catàleg.', error);
       }
@@ -879,6 +988,7 @@ function logValue(headers, values, aliases) {
 }
 
 async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
+  if (!ensureWorkoutMonth()) return;
   if (!workoutLogFile || !workoutLogHeaders.length || !accessToken) return;
   const rows = await readSpreadsheetRows(workoutLogFile);
   const headers = rows.shift()?.map((header) => String(header).trim()) || workoutLogHeaders;
@@ -888,7 +998,7 @@ async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
     'Dia entrenament': workoutDay,
     'Núm. entrenament': workoutDay,
     Dia: workoutDay,
-    'Tipus entrenament': exercise.source === 'catalog' ? 'Pim pam' : 'Entrenament propi',
+    'Tipus entrenament': workoutMode === 'auto-generat' ? 'Auto-generat' : exercise.source === 'catalog' ? 'Pim pam' : 'Entrenament propi',
     'Origen entrenament': exercise.source === 'catalog' ? 'Catàleg exercicis' : 'Fitxer d’entrenament',
     'Ordre exercici': currentExerciseIndex + 1,
     'Exercici ID': exercise.id || '',
@@ -982,6 +1092,8 @@ function saveWorkoutState() {
     currentExerciseIndex,
     currentSeriesIndex,
     workoutDay,
+    mode: workoutMode,
+    planMonth: workoutPlanMonth,
     totalSeconds: workoutTotalSeconds,
     criteria: workoutCriteria,
     startedAt: workoutStartedAt
@@ -1007,6 +1119,13 @@ function getPendingWorkoutState() {
 }
 
 async function resumeWorkout(state) {
+  if (state.mode === 'auto-generat' && state.planMonth !== trainingCalendar().key) {
+    clearWorkoutState();
+    showWorkoutFormError('El pla del mes anterior ha caducat. Genera un pla per al mes actual.');
+    return;
+  }
+  workoutMode = state.mode || 'propio';
+  workoutPlanMonth = state.planMonth || '';
   workoutExercises = state.exercises;
   workoutCriteria = state.criteria || null;
   currentExerciseIndex = Math.min(Math.max(Number(state.currentExerciseIndex) || 0, 0), workoutExercises.length - 1);
@@ -1023,6 +1142,7 @@ async function resumeWorkout(state) {
   }
   clearInterval(workoutTimer);
   workoutTimer = setInterval(() => {
+    if (!ensureWorkoutMonth()) return;
     document.getElementById('elapsed-time').textContent = formatElapsedTime(Math.floor((Date.now() - workoutStartedAt) / 1000));
   }, 1000);
   quizPanel.classList.add('hidden');
@@ -1097,6 +1217,7 @@ async function renderCalendar() {
 }
 
 function renderCurrentExercise() {
+  if (!ensureWorkoutMonth()) return;
   const exercise = workoutExercises[currentExerciseIndex];
   if (!exercise) return;
 
@@ -1160,10 +1281,35 @@ function showWorkoutSetupError(message) {
   notice.classList.remove('hidden');
 }
 
+function showWorkoutFormError(message) {
+  const error = document.getElementById('workout-form-error');
+  error.textContent = message;
+  error.classList.remove('hidden');
+  quizPanel.classList.remove('hidden');
+  workoutScreen.classList.add('hidden');
+  appScreen.classList.remove('workout-active');
+}
+
+function ensureWorkoutMonth(date) {
+  if (workoutMode !== 'auto-generat' || workoutPlanMonth === trainingCalendar(date).key) return true;
+  clearInterval(workoutTimer);
+  clearWorkoutState();
+  showWorkoutFormError('El pla del mes anterior ha caducat. Genera nous entrenaments per al mes actual.');
+  updateWorkoutAllocationFields();
+  return false;
+}
+
 async function startWorkout(formData) {
   workoutSetupMessage = '';
   excludedReplacementIds = new Set();
-  workoutExercises = await createWorkoutExercises(formData);
+  workoutMode = formData.get('mode');
+  workoutPlanMonth = workoutMode === 'auto-generat' ? trainingCalendar().key : '';
+  try {
+    workoutExercises = await createWorkoutExercises(formData);
+  } catch (error) {
+    workoutExercises = [];
+    workoutSetupMessage = error.message;
+  }
   if (!workoutExercises.length) {
     const formError = document.getElementById('workout-form-error');
     formError.textContent = workoutSetupMessage || 'No s’ha pogut preparar l’entrenament propi.';
@@ -1186,6 +1332,7 @@ async function startWorkout(formData) {
   saveWorkoutState();
   clearInterval(workoutTimer);
   workoutTimer = setInterval(() => {
+    if (!ensureWorkoutMonth()) return;
     document.getElementById('elapsed-time').textContent = formatElapsedTime(Math.floor((Date.now() - workoutStartedAt) / 1000));
   }, 1000);
   quizPanel.classList.add('hidden');
@@ -1214,6 +1361,7 @@ function finishWorkout(completed = false) {
 }
 
 function advanceExercise() {
+  if (!ensureWorkoutMonth()) return;
   const exercise = workoutExercises[currentExerciseIndex];
   if (currentSeriesIndex + 1 < getExerciseSeries(exercise)) {
     currentSeriesIndex += 1;
@@ -1361,6 +1509,8 @@ async function validateDriveDirectory(rawUrl) {
 
   try {
     const files = await collectDriveFiles(id);
+    try { await restoreMonthlyPlanSettings(files); }
+    catch (error) { console.warn('No s’ha pogut recuperar la configuració del pla mensual.', error); }
     const carpetes = files.filter((item) => item.mimeType === 'application/vnd.google-apps.folder').length;
     const fitxers = files.filter((item) => item.mimeType !== 'application/vnd.google-apps.folder').length;
     const prefix = trainingFilePrefixInput.value.trim() || 'entrenament';
@@ -1536,6 +1686,11 @@ function initApp() {
   });
 
   if (trainerForm) {
+    trainerForm.addEventListener('input', updateWorkoutAllocationFields);
+    trainerForm.addEventListener('change', updateWorkoutAllocationFields);
+    trainerForm.addEventListener('change', event => {
+      if (['daysForca', 'daysMobilitat', 'daysCardio'].includes(event.target.name)) updateCatalogZones(catalogExercises);
+    });
     trainerForm.addEventListener('submit', (event) => {
       event.preventDefault();
       const formData = new FormData(event.currentTarget);
@@ -1548,6 +1703,9 @@ function initApp() {
   });
   document.querySelectorAll('input[name="hasPain"]').forEach((input) => {
     input.addEventListener('change', togglePainFields);
+  });
+  document.querySelectorAll('input[name="trainingType"]').forEach((input) => {
+    input.addEventListener('change', () => updateCatalogZones(catalogExercises));
   });
 
   document.getElementById('complete-exercise-button')?.addEventListener('click', () => {
@@ -1639,7 +1797,7 @@ function initApp() {
         description: replacement['Instruccions CA'] || '',
         id: replacement.ID || '',
         source: 'catalog',
-        zones: `${replacement['Zones principals'] || ''};${replacement['Zones secundàries'] || ''}`,
+        zones: catalogGroups(replacement, workoutCriteria?.trainingType),
         status: 'Previst'
       };
       saveWorkoutState();
@@ -1742,4 +1900,4 @@ function initApp() {
   });
 }
 
-initApp();
+if (!window.FITFLOW_CATALOG_PREVIEW) initApp();

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ca"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Previsualització del catàleg · Fit Flow</title>
+<link rel="stylesheet" href="styles.css">
+<style>main{max-width:1100px;margin:auto}form{display:flex;flex-wrap:wrap;gap:16px;margin:24px 0}label{min-width:170px}article{margin:12px 0;padding:18px}article p{margin:8px 0}#schema{overflow-wrap:anywhere;margin:18px 0;color:var(--muted)}</style>
+<main><p><a href="demo.html" style="color:var(--primary)">← Provar l’aplicació sense Google</a> · <a href="index.html" style="color:var(--primary)">Aplicació amb Drive</a></p><h1>Catàleg d’exercicis</h1><p>Aquesta pàgina només previsualitza el catàleg. Per seleccionar Entrenament propi, Entrenament auto-generat o Pim pam i generar una sessió, obre l’aplicació d’entrenaments.</p>
+<p id="schema"></p><form id="filters">
+<label>Modalitat<select id="modality"><option value="forca">Força</option><option value="mobilitat">Mobilitat</option><option value="forcaMobilitat">Força + mobilitat</option><option value="cardio">Cardio</option></select></label>
+<label>Zona corporal<select id="region"><option value="">Totes</option><option value="superior">Superior</option><option value="inferior">Inferior</option><option value="core">Core</option><option value="fullbody">Cos sencer</option></select></label>
+<label>Grup muscular / articular<select id="group"><option value="">Tots</option></select></label>
+<label class="checkbox-row"><input id="equipment" type="checkbox" checked>Amb material disponible</label>
+</form><p id="count" role="status"></p><section id="cards"></section></main>
+<script>window.FITFLOW_CATALOG_PREVIEW=true;</script>
+<script src="catalog-preview-data.js"></script><script src="catalog.js"></script><script src="script.js"></script>
+<script>
+const rows=window.CATALOG_PREVIEW_ROWS;
+const exercises=parseExerciseCatalog(rows.map(row=>[...row]));
+document.getElementById('schema').textContent=rows[0].length+' columnes · '+exercises.length+' exercicis: '+rows[0].join(' · ');
+const modality=document.getElementById('modality'),group=document.getElementById('group');
+function refreshGroups(){
+ group.replaceChildren(new Option('Tots',''));
+ const groups=new Set(exercises.flatMap(e=>catalogGroups(e,modality.value).split(';').map(x=>x.trim()).filter(Boolean)));
+ [...groups].sort().forEach(g=>group.add(new Option(g,g)));render();
+}
+function render(){
+ const criteria={trainingType:modality.value,focus:document.getElementById('region').value?[document.getElementById('region').value]:[],painZones:group.value?[group.value]:[],hasEquipment:document.getElementById('equipment').checked};
+ const matches=exercises.filter(e=>isCatalogAvailable(e)&&exerciseMatchesCriteria(e,criteria));
+ document.getElementById('count').textContent=matches.length+' exercicis disponibles';
+ const cards=document.getElementById('cards');cards.replaceChildren();
+ matches.forEach(e=>{const card=document.createElement('article');card.className='panel';
+  const title=document.createElement('h3');title.textContent=e['Nom CA'];card.append(title);
+  for(const text of [e.Modalitat,'Grups: '+catalogGroups(e,criteria.trainingType),'Material: '+e['Material requerit'],'Registre: '+e['Mètriques de registre'],e['Instruccions CA']]){const p=document.createElement('p');p.textContent=text;card.append(p);}cards.append(card);
+ });
+}
+modality.addEventListener('change',refreshGroups);document.getElementById('filters').addEventListener('change',render);refreshGroups();
+</script></html>

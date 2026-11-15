@@ -1,0 +1,18 @@
+<!doctype html><html lang="ca"><meta charset="utf-8"><title>Fit Flow · Demo local</title>
+<body><p>Carregant l’aplicació de demostració…</p>
+<script>
+// Reuse the real application markup; load only local scripts, without Google.
+(async()=>{
+ const response=await fetch('index.html');
+ if(!response.ok)throw new Error('No es pot carregar index.html');
+ const html=(await response.text()).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'');
+ const parsed=new DOMParser().parseFromString(html,'text/html');
+ document.documentElement.lang='ca';
+ document.head.innerHTML=parsed.head.innerHTML;
+ document.body.innerHTML=parsed.body.innerHTML;
+ window.FITFLOW_CATALOG_PREVIEW=true;
+ for(const src of ['catalog-preview-data.js','catalog.js','script.js','demo.js']){
+  await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=src;script.onload=resolve;script.onerror=()=>reject(new Error('No es pot carregar '+src));document.body.append(script);});
+ }
+})().catch(error=>{document.body.textContent=error.message;});
+</script></body></html>
