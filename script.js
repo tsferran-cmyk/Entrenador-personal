@@ -234,8 +234,9 @@ function trainingCalendar(date = new Date()) {
 
 function monthlyPlanSpec(formData, date, checkCapacity = true) {
   const calendar = trainingCalendar(date);
-  const integer = name => {
+  const integer = (name, defaultZero = false) => {
     const raw = formData.get(name);
+    if (raw === null && defaultZero) return 0;
     const value = Number(raw);
     if (raw === null || String(raw).trim() === '' || !Number.isInteger(value) || value < 0 || value > 31)
       throw new Error('Indica un nombre enter de dies entre 0 i 31 a tots els camps.');
@@ -248,15 +249,27 @@ function monthlyPlanSpec(formData, date, checkCapacity = true) {
   const types = { forca: integer('daysForca'), mobilitat: integer('daysMobilitat'), cardio: integer('daysCardio') };
   if (Object.values(types).reduce((sum, n) => sum + n, 0) !== total)
     throw new Error(`Els dies de força, mobilitat i càrdio han de sumar ${total}.`);
-  const zones = types.forca ? { superior: integer('daysSuperior'), inferior: integer('daysInferior'), core: integer('daysCore'), fullbody: integer('daysFullbody') } : {};
+  const zones = types.forca ? {
+    superior: integer('daysSuperior'), inferior: integer('daysInferior'), core: integer('daysCore'), fullbody: integer('daysFullbody'),
+    superiorInferior: integer('daysSuperiorInferior', true), superiorCore: integer('daysSuperiorCore', true), inferiorCore: integer('daysInferiorCore', true)
+  } : {};
   if (Object.values(zones).reduce((sum, n) => sum + n, 0) !== types.forca)
     throw new Error(`Els dies de les zones corporals han de sumar ${types.forca}, el total de dies de força.`);
   const routines = [];
-  for (const [zone, count] of Object.entries(zones)) for (let i = 0; i < count; i++) routines.push({ trainingType: 'forca', focus: [zone] });
+  const combinations = { superiorInferior: ['superior', 'inferior'], superiorCore: ['superior', 'core'], inferiorCore: ['inferior', 'core'] };
+  for (const [zone, count] of Object.entries(zones)) for (let i = 0; i < count; i++) routines.push({ trainingType: 'forca', focus: combinations[zone] || [zone] });
   for (const type of ['mobilitat', 'cardio']) for (let i = 0; i < types[type]; i++) routines.push({ trainingType: type, focus: [] });
   return { month: calendar.key, total, types, zones, routines,
     duration: Number(formData.get('duration') || 30), hasEquipment: formData.get('hasEquipment') === 'si',
     painZones: formData.get('hasPain') === 'si' ? formData.getAll('painZone').sort() : [] };
+}
+
+function monthlyPlanSignature(spec) {
+  if (!spec) return '';
+  // New zero-day options must not invalidate an existing single-zone plan.
+  const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+  return JSON.stringify(canonical({ ...spec, zones: Object.fromEntries(Object.entries(spec.zones).filter(([, days]) => days > 0)) }));
 }
 
 function updateWorkoutAllocationFields() {
@@ -285,7 +298,7 @@ function updateWorkoutAllocationFields() {
     try {
       const data = new FormData(form);
       const spec = monthlyPlanSpec(data, undefined, false);
-      const existing = JSON.stringify(spec) === JSON.stringify(loadedMonthlySpec);
+      const existing = monthlyPlanSignature(spec) === monthlyPlanSignature(loadedMonthlySpec);
       if (!existing) monthlyPlanSpec(data);
       document.getElementById('generated-workout-count').max = existing ? Math.max(calendar.remaining, spec.total) : calendar.remaining;
       status.textContent = existing ? `Pla d’aquest mes ja creat: ${spec.total} dies.` : `Distribució correcta: ${spec.total} dies.`;
@@ -295,15 +308,66 @@ function updateWorkoutAllocationFields() {
   form.querySelector('button[type="submit"]').disabled = !valid;
 }
 
+function strengthExerciseRegion(exercise) {
+  return normalizeBodyRegion((!exercise.catalogRegionInferred && exercise['Zona corporal']) || exercise.bodyRegion || inferCatalogRegion(catalogGroups(exercise, 'forca')));
+}
+
+function isAlternatingStrength(criteria) {
+  return criteria.trainingType === 'forca' && criteria.focus.length > 1 && !criteria.focus.includes('fullbody');
+}
+
+function routineExerciseSignature(items, trainingType) {
+  return `${trainingType}:` + items.map(item => item.exercise.ID).sort().join('|');
+}
+
+function* exerciseCombinations(items, count, start = 0, chosen = []) {
+  if (chosen.length === count) { yield [...chosen]; return; }
+  for (let i = start; i <= items.length - (count - chosen.length); i++) {
+    chosen.push(items[i]);
+    yield* exerciseCombinations(items, count, i + 1, chosen);
+    chosen.pop();
+  }
+}
+
+function chooseAlternatingExercises(pool, duration, focus, used = new Set()) {
+  const zones = [...new Set(focus)];
+  const buckets = zones.map(zone => pool.filter(exercise => strengthExerciseRegion(exercise) === zone));
+  const missing = zones.filter((zone, index) => !buckets[index].length);
+  if (missing.length) throw new Error(`Falten exercicis de força de ${missing.map(zone => focusMap[zone]).join(' i ')} amb els filtres indicats. No es poden alternar les zones.`);
+  const requested = getWorkoutExerciseDistribution(duration).reduce((sum, phase) => sum + phase.count, 0);
+  const count = Math.min(requested, buckets.reduce((sum, bucket) => sum + bucket.length, 0));
+  let capacity = false;
+  // With an odd exercise count, either zone may lead the alternating sequence.
+  for (let offset = 0; offset < zones.length; offset++) {
+    const order = Array.from({ length: count }, (_, i) => (i + offset) % zones.length);
+    const quotas = buckets.map((bucket, i) => order.filter(index => index === i).length);
+    if (quotas.some((quota, i) => quota > buckets[i].length)) continue;
+    capacity = true;
+    function* selectBuckets(index = 0, selected = []) {
+      if (index === buckets.length) { yield [...selected]; return; }
+      for (const combination of exerciseCombinations(buckets[index], quotas[index])) {
+        selected.push(combination); yield* selectBuckets(index + 1, selected); selected.pop();
+      }
+    }
+    for (const selected of selectBuckets()) {
+      const positions = zones.map(() => 0);
+      const result = order.map(index => ({ exercise: selected[index][positions[index]++], phase: 'Entrenament principal', assignedRegion: zones[index] }));
+      if (!used.has(routineExerciseSignature(result, 'forca'))) return result;
+    }
+  }
+  if (!capacity) throw new Error('No hi ha prou exercicis de cada zona per mantenir l’alternança amb aquesta durada. Redueix la durada o amplia el catàleg.');
+  throw new Error('El catàleg no permet crear més entrenaments diferents alternant aquestes zones. Redueix els dies o amplia el catàleg.');
+}
+
 function monthlyPlanRows(catalog, spec, repetitions) {
-  const headers = ['Numero', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Pes', 'Material', 'Material opcional', 'Descripció', 'Link', 'Exercici ID', 'Zona corporal', 'Zones principals', 'Zones secundàries', 'Fase', 'Modalitat', 'Grups musculars', 'Grups articulars', 'Modalitat assignada', 'Zona assignada', 'Mes del pla', 'Configuració del pla'];
+  const headers = ['Numero', 'Tipus', 'Exercici', 'Sèries', 'Repeticions', 'Pes', 'Material', 'Material opcional', 'Descripció', 'Link', 'Exercici ID', 'Zona corporal', 'Zones principals', 'Zones secundàries', 'Fase', 'Modalitat', 'Grups musculars', 'Grups articulars', 'Modalitat assignada', 'Zona assignada', 'Mes del pla', 'Configuració del pla', 'Zona de l’exercici'];
   const rows = [], used = new Set();
   spec.routines.forEach((routine, index) => {
     const criteria = { ...routine, hasEquipment: spec.hasEquipment, painZones: spec.painZones };
     const pool = catalog.filter(exercise => isCatalogAvailable(exercise) && exerciseMatchesCriteria(exercise, criteria));
-    if (!pool.length) throw new Error(`No hi ha exercicis per al dia ${index + 1}: ${trainingMap[routine.trainingType].label}${routine.focus.length ? ` (${focusMap[routine.focus[0]]})` : ''}, amb els filtres indicats.`);
-    let selected = chooseWorkoutExercises(pool, spec.duration);
-    const signature = items => `${routine.trainingType}:` + items.map(item => item.exercise.ID).sort().join('|');
+    if (!pool.length) throw new Error(`No hi ha exercicis per al dia ${index + 1}: ${trainingMap[routine.trainingType].label}${routine.focus.length ? ` (${routine.focus.map(zone => focusMap[zone]).join(' + ')})` : ''}, amb els filtres indicats.`);
+    let selected = isAlternatingStrength(criteria) ? chooseAlternatingExercises(pool, spec.duration, routine.focus, used) : chooseWorkoutExercises(pool, spec.duration);
+    const signature = items => routineExerciseSignature(items, routine.trainingType);
     if (used.has(signature(selected))) {
       // Enumerate only until finding a new exercise set; at most 31 sets are used.
       const size = selected.length;
@@ -321,9 +385,9 @@ function monthlyPlanRows(catalog, spec, repetitions) {
       if (!found) throw new Error(`El catàleg no permet generar ${spec.total} entrenaments diferents amb aquesta distribució. Redueix els dies o amplia el catàleg.`);
     }
     used.add(signature(selected));
-    selected.forEach(({ exercise, phase }) => {
+    selected.forEach(({ exercise, phase, assignedRegion }) => {
       const mapped = applyCurrentRepetition({ id: exercise.ID, nameCa: exercise['Nom CA'] }, repetitions.rows, repetitions.headers);
-      rows.push([index + 1, `${phase} - ${trainingMap[routine.trainingType].label}`, exercise['Nom CA'], mapped.totalSeries || 1, mapped.reps || '', mapped.weight || '', exercise['Material requerit'], exercise['Material opcional'] || '', exercise['Instruccions CA'], exercise.Link, exercise.ID, inferCatalogRegion(catalogGroups(exercise, routine.trainingType)), catalogGroups(exercise, routine.trainingType), '', phase, exercise.Modalitat, exercise['Grups musculars'], exercise['Grups articulars'], routine.trainingType, routine.focus[0] || '', spec.month, JSON.stringify(spec)]);
+      rows.push([index + 1, `${phase} - ${trainingMap[routine.trainingType].label}`, exercise['Nom CA'], mapped.totalSeries || 1, mapped.reps || '', mapped.weight || '', exercise['Material requerit'], exercise['Material opcional'] || '', exercise['Instruccions CA'], exercise.Link, exercise.ID, inferCatalogRegion(catalogGroups(exercise, routine.trainingType)), catalogGroups(exercise, routine.trainingType), '', phase, exercise.Modalitat, exercise['Grups musculars'], exercise['Grups articulars'], routine.trainingType, routine.focus.join(';'), spec.month, JSON.stringify(spec), assignedRegion || '']);
     });
   });
   return [headers, ...rows];
@@ -341,6 +405,7 @@ async function restoreMonthlyPlanSettings(files) {
   const form = document.getElementById('trainer-form');
   const values = { generatedWorkoutCount: spec.total, daysForca: spec.types.forca, daysMobilitat: spec.types.mobilitat, daysCardio: spec.types.cardio,
     daysSuperior: spec.zones.superior || 0, daysInferior: spec.zones.inferior || 0, daysCore: spec.zones.core || 0, daysFullbody: spec.zones.fullbody || 0,
+    daysSuperiorInferior: spec.zones.superiorInferior || 0, daysSuperiorCore: spec.zones.superiorCore || 0, daysInferiorCore: spec.zones.inferiorCore || 0,
     duration: spec.duration, hasEquipment: spec.hasEquipment ? 'si' : 'no', hasPain: spec.painZones.length ? 'si' : 'no' };
   for (const [name, value] of Object.entries(values)) form.elements[name].value = String(value);
   if (!catalogExercises.length) catalogExercises = await loadExerciseCatalog();
@@ -607,7 +672,7 @@ async function ensureAutoGeneratedTrainingFile(formData) {
   if (existingFile) {
     const rows = await readSpreadsheetRows(existingFile);
     const configColumn = rows[0].indexOf('Configuració del pla');
-    if (configColumn >= 0 && rows[1]?.[configColumn] === JSON.stringify(spec)) {
+    if (configColumn >= 0 && rows[1]?.[configColumn] && monthlyPlanSignature(JSON.parse(rows[1][configColumn])) === monthlyPlanSignature(spec)) {
       await confirmMonthlyReplacements(existingFile, await loadExerciseCatalog(), null);
       loadedMonthlySpec = spec;
       return existingFile;
@@ -705,6 +770,7 @@ async function createWorkoutExercises(formData) {
           modality: getColumnValue(exercise, ['Modalitat']),
           assignedModality: getColumnValue(exercise, ['Modalitat assignada']),
           assignedZone: getColumnValue(exercise, ['Zona assignada']),
+          assignedRegion: getColumnValue(exercise, ['Zona de l’exercici']),
           planMonth: getColumnValue(exercise, ['Mes del pla']),
           phase: getColumnValue(exercise, ['Fase']),
           source: 'propi',
@@ -756,9 +822,10 @@ async function createWorkoutExercises(formData) {
       throw new Error('No hi ha exercicis actius que coincideixin amb la zona corporal, les zones de molèstia, el tipus d’entrenament i el material seleccionats.');
     }
     const duration = Number(formData.get('duration') || 15);
-    const source = chooseWorkoutExercises(selected, duration);
+    const source = isAlternatingStrength(workoutCriteria) ? chooseAlternatingExercises(selected, duration, workoutCriteria.focus) : chooseWorkoutExercises(selected, duration);
 
-    const result = source.map(({ exercise, phase }, index) => ({
+    const result = source.map(({ exercise, phase, assignedRegion }, index) => ({
+      assignedRegion: assignedRegion || '',
       type: `${phase} - ${exercise.Modalitat || 'Entrenament'}`,
       phase,
       videoUrl: exercise.Link || exercise['Enllaç vídeo'] || exercise['Vídeo'] || '',
@@ -874,6 +941,7 @@ function findReplacementExercise(currentExercise) {
   const usage = getCatalogUsage();
   const candidates = catalogExercises.filter((exercise) => {
     if (exercise.ID === currentId) return false;
+    if (currentExercise.assignedRegion && strengthExerciseRegion(exercise) !== currentExercise.assignedRegion) return false;
     const candidateZones = getZoneTokens(catalogGroups(exercise, workoutCriteria.trainingType));
     const sharesZone = !currentZones.length || currentZones.some((zone) => candidateZones.includes(zone));
     return sharesZone && exerciseMatchesCriteria(exercise, workoutCriteria);
@@ -992,6 +1060,7 @@ async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
   if (!workoutLogFile || !workoutLogHeaders.length || !accessToken) return;
   const rows = await readSpreadsheetRows(workoutLogFile);
   const headers = rows.shift()?.map((header) => String(header).trim()) || workoutLogHeaders;
+  if (exercise.assignedRegion && !headers.includes('Zona de l’exercici')) headers.push('Zona de l’exercici');
   const values = {
     'Sessió ID': workoutSessionId,
     Data: new Date().toISOString().slice(0, 10),
@@ -1003,6 +1072,7 @@ async function appendWorkoutLogRow(exercise, setNumber, completed, data = {}) {
     'Ordre exercici': currentExerciseIndex + 1,
     'Exercici ID': exercise.id || '',
     Exercici: exercise.nameCa || '',
+    'Zona de l’exercici': focusMap[exercise.assignedRegion] || '',
     'Origen / motiu exercici': exercise.source === 'catalog' ? 'Catàleg d’exercicis' : 'Fitxer propi',
     Sèrie: `${setNumber}/${getExerciseSeries(exercise)}`,
     Repeticions: data.reps || exercise.reps || '',
@@ -1237,6 +1307,8 @@ function renderCurrentExercise() {
   optionalEquipment.textContent = exercise.optionalEquipment ? `Material opcional: ${exercise.optionalEquipment}` : '';
   optionalEquipment.classList.toggle('hidden', !exercise.optionalEquipment);
   document.getElementById('exercise-description').textContent = exercise.description || 'La descripció apareixerà quan el catàleg la proporcioni.';
+  document.getElementById('exercise-zone').textContent = focusMap[exercise.assignedRegion] || '';
+  document.getElementById('exercise-zone-info').classList.toggle('hidden', !exercise.assignedRegion);
   document.getElementById('exercise-step').textContent = currentExerciseIndex + 1;
   document.getElementById('current-exercise-number').textContent = currentExerciseIndex + 1;
   document.getElementById('total-exercises').textContent = workoutExercises.length;
@@ -1797,6 +1869,7 @@ function initApp() {
         description: replacement['Instruccions CA'] || '',
         id: replacement.ID || '',
         source: 'catalog',
+        assignedRegion: currentExercise.assignedRegion || '',
         zones: catalogGroups(replacement, workoutCriteria?.trainingType),
         status: 'Previst'
       };

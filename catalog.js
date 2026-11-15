@@ -143,8 +143,10 @@ async function confirmMonthlyReplacements(file, catalog, criteria) {
   const idColumn = headers.findIndex((h) => normalizeColumnName(h) === 'exerciciid');
   if (idColumn < 0) return;
   const ids = new Set(rows.map((r) => String(r[idColumn]).trim()));
+  const regionColumn = headers.indexOf('Zona de l’exercici');
   for (const original of catalog.filter((exercise) => ids.has(exercise.ID) && normalizeColumnName(exercise.Actiu) === 'no')) {
-    const candidates = equivalentCatalogExercises(original, catalog, criteria);
+    const assignedRegions = new Set(rows.filter(row => String(row[idColumn]).trim() === original.ID).map(row => row[regionColumn]).filter(Boolean));
+    const candidates = equivalentCatalogExercises(original, catalog, criteria).filter(candidate => !assignedRegions.size || [...assignedRegions].every(region => strengthExerciseRegion(candidate) === region));
     const replacement = candidates.find((candidate) => !ids.has(candidate.ID)) || candidates[0];
     if (!replacement) {
       window.alert(`No hi ha cap equivalent disponible per a «${original['Nom CA']}». Revisa el catàleg; no es proposarà l’exercici descartat.`);
@@ -159,6 +161,7 @@ async function confirmMonthlyReplacements(file, catalog, criteria) {
       material: replacement['Material requerit'], materialopcional: replacement['Material opcional'] || '',
       descripcio: replacement['Instruccions CA'], link: replacement.Link,
       zonacorporal: replacement['Zona corporal'], zonesprincipals: replacement['Zones principals'],
+      grupsmusculars: replacement['Grups musculars'] || '', grupsarticulars: replacement['Grups articulars'] || '',
       zonessecundaries: replacement['Zones secundàries'] || '', fase: replacement.Fase || '',
       series: mapped.totalSeries || 1, repeticions: mapped.reps || '', pes: mapped.weight || ''
     };

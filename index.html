@@ -197,7 +197,11 @@
                   <label>Tronc inferior<input type="number" name="daysInferior" min="0" max="31" value="0" /></label>
                   <label>Core<input type="number" name="daysCore" min="0" max="31" value="0" /></label>
                   <label>Cos sencer<input type="number" name="daysFullbody" min="0" max="31" value="1" /></label>
+                  <label>Superior + Inferior<input type="number" name="daysSuperiorInferior" min="0" max="31" value="0" /></label>
+                  <label>Superior + Core<input type="number" name="daysSuperiorCore" min="0" max="31" value="0" /></label>
+                  <label>Inferior + Core<input type="number" name="daysInferiorCore" min="0" max="31" value="0" /></label>
                 </div>
+                <p>Un dia combinat compta com un entrenament. Els exercicis alternen les dues zones.</p>
               </div>
 
               <div id="single-strength-fields" class="question-group">
@@ -297,6 +301,7 @@
               <div><span>Pes esperat</span><strong id="exercise-weight">-</strong></div>
             </div>
             <div class="exercise-info-grid">
+              <div id="exercise-zone-info" class="hidden"><span>Zona d’aquest exercici</span><p id="exercise-zone"></p></div>
               <div><span>Material necessari</span><p id="exercise-equipment">Encara no especificat</p><p id="exercise-optional-equipment" class="optional-equipment hidden"></p></div>
               <div><span>Com fer-lo</span><p id="exercise-description">La descripció apareixerà quan el catàleg la proporcioni.</p></div>
             </div>

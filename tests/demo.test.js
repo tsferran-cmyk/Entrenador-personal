@@ -13,6 +13,14 @@
   finishWorkout(false);
  }
  check('Demo logs stay in memory',demoLog.length===3);
+ Object.entries({mode:'auto-generat',generatedWorkoutCount:'1',daysForca:'1',daysMobilitat:'0',daysCardio:'0',daysSuperior:'0',daysInferior:'0',daysCore:'0',daysFullbody:'0',daysSuperiorInferior:'1',duration:'15',hasEquipment:'si'}).forEach(([name,value])=>form.elements[name].value=value);
+ toggleModeFields();
+ check('Demo accepts a combined-zone day',!form.querySelector('button[type="submit"]').disabled);
+ form.querySelector('button[type="submit"]').click();
+ for(let i=0;i<50&&workoutScreen.classList.contains('hidden');i++)await new Promise(r=>setTimeout(r,10));
+ check('Demo displays alternating combined-zone exercises',!workoutScreen.classList.contains('hidden')&&workoutExercises.length>=2&&workoutExercises.every((e,i)=>e.assignedRegion&&(!i||e.assignedRegion!==workoutExercises[i-1].assignedRegion)));
+ check('Demo card displays the current zone',document.getElementById('exercise-zone').textContent===focusMap[workoutExercises[0].assignedRegion]);
+ finishWorkout(false);
  // Daily proposal rotation is intentionally stored by the normal sampler.
  const storageAfter={...localStorage};const storageBefore=JSON.parse(savedStorage);
  for(const key of ['fitflow-proposal-state']){delete storageAfter[key];delete storageBefore[key];}

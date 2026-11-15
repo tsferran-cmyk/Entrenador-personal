@@ -13,9 +13,18 @@ i, per als dies de força, dies per zona corporal. Les modalitats han de sumar
 el total i les zones han de sumar els dies de força. Cada rutina té la seva
 modalitat i zona; no es barregen els filtres de totes les rutines en obrir-ne una.
 Si el catàleg no permet crear prou rutines diferents, s'indica l'error.
+Les opcions de força inclouen `Superior + Inferior`, `Superior + Core` i
+`Inferior + Core`. Cada combinació compta com un sol dia. Els exercicis
+alternen les zones, sense repetir-ne dos de seguits; amb un nombre imparell,
+una zona té un exercici més. L'Excel del pla conserva la combinació i la zona
+de cada exercici, que també es mostra durant la sessió i es registra al log.
+Si falta una zona o no hi ha prou exercicis per alternar, cal canviar els
+filtres, reduir la durada o ampliar el catàleg. Els plans anteriors continuen
+obrint-se quan les combinacions noves tenen zero dies.
 Els fitxers mensuals antics, sense la nova distribució, demanen confirmar-ne la regeneració.
 
 Pim pam genera una sessió: primer modalitat i, si és força, zones corporals.
+Si s'escullen diverses zones concretes de força, també s'alternen els exercicis.
 Força + mobilitat ja no és una opció del qüestionari.
 
 A `demo.html`, el camp «Data per provar el canvi de mes» permet comprovar
