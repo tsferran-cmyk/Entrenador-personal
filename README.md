@@ -2,6 +2,22 @@
 
 ## Plans mensuals i Pim pam
 
+En seleccionar entrenament auto-generat, primer es comprova si ja existeix
+el fitxer del mes. Si existeix, es mostren **Entrenar** i **Revisar entrenaments**;
+no es torna a generar ni es compara amb els valors del qüestionari.
+Entrenar obre la rutina següent a l'última sessió acabada i torna a la primera
+quan s'ha completat el cicle. Revisar mostra exercicis, modalitat, durada i
+sessions acabades aquest mes. En obrir una rutina es poden escollir i desar
+alternatives abans d'entrenar, conservant modalitat, material, zones i alternança.
+Els pesos i les repeticions del substitut provenen del seu propi registre.
+Els canvis afecten el pla; el log històric es conserva.
+
+El recompte agrupa les files per sessió, no per sèrie. Les sessions noves desen
+una marca explícita de finalització; per als logs antics es comprova que hi
+constin totes les sèries de tots els exercicis de la rutina. Les sessions
+incompletes no fan avançar la rotació. Si no es pot llegir el pla, es mostra
+l'error i es permet reintentar, sense generar-ne un altre automàticament.
+
 L'entrenament auto-generat correspon al mes natural a Europa/Madrid. Per crear
 un pla nou no es poden demanar més rutines que dies restants, incloent-hi avui:
 el 29 de novembre en queden 2; el 23 en queden 8. Un pla ja creat es pot tornar
@@ -34,6 +50,7 @@ de l'aplicació; el fitxer i els registres es mantenen en memòria.
 Proves locals: `tests/run-catalog-tests.ps1`,
 `tests/run-workout-ui-tests.ps1`, `tests/run-workout-ui-tests.ps1 -Monthly`
 i `tests/run-workout-ui-tests.ps1 -Demo`.
+El nou flux de consulta i edició es comprova amb `tests/run-workout-ui-tests.ps1 -Hub`.
 
 ## Catàleg actual: 12 columnes
 

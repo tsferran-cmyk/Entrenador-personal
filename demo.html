@@ -11,7 +11,7 @@
  document.head.innerHTML=parsed.head.innerHTML;
  document.body.innerHTML=parsed.body.innerHTML;
  window.FITFLOW_CATALOG_PREVIEW=true;
- for(const src of ['catalog-preview-data.js','catalog.js','script.js','demo.js']){
+ for(const src of ['catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','demo.js']){
   await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=src;script.onload=resolve;script.onerror=()=>reject(new Error('No es pot carregar '+src));document.body.append(script);});
  }
 })().catch(error=>{document.body.textContent=error.message;});

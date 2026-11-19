@@ -141,6 +141,15 @@
               </div>
             </div>
 
+            <div id="monthly-plan-entry" class="panel hidden">
+              <p id="monthly-plan-status" role="status" aria-live="polite"></p>
+              <div class="option-grid two">
+                <button id="monthly-train-button" class="button primary" type="button">Entrenar</button>
+                <button id="monthly-review-button" class="button ghost" type="button">Revisar entrenaments</button>
+              </div>
+              <button id="monthly-retry-button" class="button ghost hidden" type="button">Tornar a comprovar</button>
+            </div>
+
             <div id="proposed-fields" class="hidden">
               <div id="generated-workout-count-fields" class="question-group hidden">
                 <label for="generated-workout-count">Quants dies d’entrenament diferents vols aquest mes?</label>
@@ -258,6 +267,29 @@
             <button type="submit" class="button primary full">Generar entrenament</button>
           </form>
         </section>
+
+        <section id="monthly-review-panel" class="panel hidden">
+          <div class="directory-settings-header">
+            <h3>Entrenaments del mes</h3>
+            <button id="monthly-review-back" class="button ghost" type="button">Tornar</button>
+          </div>
+          <p id="monthly-review-status" role="status" aria-live="polite"></p>
+          <div id="monthly-routine-list" class="stack-form"></div>
+          <div id="monthly-routine-detail" class="stack-form"></div>
+        </section>
+
+        <dialog id="monthly-exercise-dialog" class="exercise-dialog">
+          <form id="monthly-exercise-form">
+            <h3>Canviar exercici</h3>
+            <label>Exercici nou<select id="monthly-exercise-choice" required></select></label>
+            <p id="monthly-exercise-description" class="dialog-copy"></p>
+            <p id="monthly-exercise-error" role="alert"></p>
+            <div class="dialog-actions">
+              <button id="monthly-exercise-cancel" class="button ghost" type="button">Cancel·lar</button>
+              <button id="monthly-exercise-save" class="button primary" type="submit">Desar canvi</button>
+            </div>
+          </form>
+        </dialog>
 
         <section id="workout-screen" class="workout-screen hidden" aria-live="polite">
           <p class="eyebrow workout-kicker">Entrenament en curs</p>
@@ -414,6 +446,7 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" defer></script>
     <script src="config.js" defer></script>
     <script src="catalog.js" defer></script>
+    <script src="monthly-hub.js" defer></script>
     <script src="script.js" defer></script>
   </body>
 </html>

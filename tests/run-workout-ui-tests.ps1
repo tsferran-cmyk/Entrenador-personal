@@ -1,13 +1,14 @@
-param([switch]$Demo, [switch]$Monthly)
+param([switch]$Demo, [switch]$Monthly, [switch]$Hub)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $html = [IO.File]::ReadAllText((Join-Path $root 'index.html'))
 $html = [regex]::Replace($html, '<script\b[^>]*>[\s\S]*?</script>', '')
 $html = [regex]::Replace($html, '<link\b[^>]*>', '')
 $scripts = 'window.FITFLOW_CATALOG_PREVIEW=true;'
-$files = @('catalog-preview-data.js','catalog.js','script.js','tests/workout-ui.test.js')
-if ($Demo) { $files = @('catalog-preview-data.js','catalog.js','script.js','demo.js','tests/demo.test.js') }
-if ($Monthly) { $files = @('catalog-preview-data.js','catalog.js','script.js','tests/monthly.test.js') }
+$files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','tests/workout-ui.test.js')
+if ($Demo) { $files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','demo.js','tests/demo.test.js') }
+if ($Monthly) { $files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','tests/monthly.test.js') }
+if ($Hub) { $files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','tests/monthly-hub.test.js') }
 foreach ($name in $files) {
     $scripts += "`n" + [IO.File]::ReadAllText((Join-Path $root $name))
 }

@@ -2,9 +2,10 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $catalog = [IO.File]::ReadAllText((Join-Path $root 'catalog.js'))
 $app = [IO.File]::ReadAllText((Join-Path $root 'script.js')).Replace('initApp();', '')
+$hub = [IO.File]::ReadAllText((Join-Path $root 'monthly-hub.js'))
 $tests = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'catalog.test.js'))
 $data = [IO.File]::ReadAllText((Join-Path $root 'catalog-preview-data.js'))
-$html = '<!doctype html><meta charset="utf-8"><body><script>' + $data + "`n" + $catalog + "`n" + $app + "`n" + $tests + '</script></body>'
+$html = '<!doctype html><meta charset="utf-8"><body><script>' + $data + "`n" + $catalog + "`n" + $hub + "`n" + $app + "`n" + $tests + '</script></body>'
 $testFile = Join-Path $env:TEMP ('fitflow-tests-' + [guid]::NewGuid().ToString('N') + '.html')
 $outputFile = $testFile + '.out'
 $errorFile = $testFile + '.err'

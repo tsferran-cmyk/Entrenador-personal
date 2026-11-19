@@ -19,6 +19,19 @@ getPendingWorkoutState=()=>null;
 readCurrentRepetitions=async()=>({headers:['Exercici ID','Sèries','Repeticions','Pes'],rows:[...demoRepetitions.values()]});
 updateCurrentRepetitions=async(exercise,reps,weight)=>{demoRepetitions.set(exercise.id,[exercise.id,getExerciseSeries(exercise),reps,weight]);};
 findCatalogFile=()=>demoCatalogFile;
+findCurrentMonthlyPlanFile=async()=>demoPlans.has('demo-plan-'+trainingCalendar().key)
+ ? {id:'demo-plan-'+trainingCalendar().key,name:getCurrentMonthAutoFileName()} : null;
+readMonthlyPlanUsage=async plan=>{
+ const completed=demoCompletedRoutines.filter(item=>item.month===plan.month);
+ return {counts:new Map(plan.routines.map(routine=>[routine.day,completed.filter(item=>item.day===routine.day).length])),lastDay:completed.at(-1)?.day||''};
+};
+recordMonthlySessionCompletion=async()=>{};
+editExerciseWorkbook=async(file,edit)=>{
+ if(!demoPlans.has(file.id))throw new Error('Pla de demostració desconegut');
+ const rows=demoPlans.get(file.id).map(row=>[...row]);
+ edit(rows).forEach(change=>rows[change.row][change.column]=change.value);
+ demoPlans.set(file.id,rows);
+};
 readSpreadsheetRows=async file=>{
  if(file.id===demoCatalogFile.id)return window.CATALOG_PREVIEW_ROWS.map(row=>[...row]);
  if(file.id===demoOwnFile.id)return [demoHeaders,...demoCatalog.filter(e=>normalizeColumnName(e.Modalitat).includes('forca')&&normalizeColumnName(e['Material requerit'])==='cap').slice(0,4).map(e=>demoRow(e,1))];
@@ -69,5 +82,5 @@ let demoDate='';
 trainingCalendar=date=>demoRealCalendar(date || (demoDate ? new Date(demoDate+'T12:00:00') : new Date()));
 const demoDateLabel=document.createElement('label');demoDateLabel.textContent='Data per provar el canvi de mes';
 const demoDateInput=document.createElement('input');demoDateInput.type='date';
-demoDateInput.addEventListener('change',()=>{demoDate=demoDateInput.value;ensureWorkoutMonth();updateWorkoutAllocationFields();});
+demoDateInput.addEventListener('change',()=>{demoDate=demoDateInput.value;ensureWorkoutMonth();updateWorkoutAllocationFields();if(document.querySelector('[name="mode"]:checked')?.value==='auto-generat')void refreshMonthlyEntry();});
 demoDateLabel.append(demoDateInput);banner.append(demoDateLabel);

@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><title>Demo browser smoke test</title>
+<iframe src="../demo.html" title="Demo"></iframe>
+<script>
+(async()=>{
+ const frame=document.querySelector('iframe');
+ const wait=async test=>{for(let i=0;i<200&&!test();i++)await new Promise(resolve=>setTimeout(resolve,20));if(!test())throw new Error('Timeout');};
+ await wait(()=>frame.contentDocument?.getElementById('user-status')?.textContent==='Demo local');
+ const w=frame.contentWindow,d=frame.contentDocument,form=d.getElementById('trainer-form');
+ form.elements.mode.value='auto-generat';w.toggleModeFields();await w.refreshMonthlyEntry();
+ Object.entries({generatedWorkoutCount:'2',daysForca:'1',daysMobilitat:'1',daysCardio:'0',daysSuperior:'0',daysInferior:'0',daysCore:'0',daysFullbody:'0',daysSuperiorInferior:'1',duration:'15',hasEquipment:'si'}).forEach(([key,value])=>form.elements[key].value=value);
+ form.dispatchEvent(new w.Event('input'));form.querySelector('button[type="submit"]').click();
+ await wait(()=>!d.getElementById('workout-screen').classList.contains('hidden'));
+ w.finishWorkout(false);await wait(()=>!d.getElementById('monthly-review-button').classList.contains('hidden'));
+ d.getElementById('monthly-review-button').click();await wait(()=>d.querySelectorAll('.monthly-routine-card').length===2);
+ d.querySelector('.monthly-routine-card').click();
+ if(d.querySelectorAll('#monthly-routine-detail article').length!==3)throw new Error('Exercise list missing');
+ const first=d.querySelector('#monthly-routine-detail article strong').textContent;
+ d.querySelector('#monthly-routine-detail button').click();await wait(()=>d.getElementById('monthly-exercise-dialog').open);
+ d.getElementById('monthly-exercise-form').requestSubmit();await wait(()=>!d.getElementById('monthly-exercise-dialog').open);
+ await wait(()=>d.querySelector('#monthly-routine-detail article strong')?.textContent!==first);
+ d.getElementById('monthly-review-back').click();await wait(()=>!d.getElementById('monthly-train-button').classList.contains('hidden'));
+ d.getElementById('monthly-train-button').click();await wait(()=>!d.getElementById('workout-screen').classList.contains('hidden'));
+ document.body.textContent='PASS live demo: generate, reopen, review, edit and train';
+})().catch(error=>{document.body.textContent='FAIL live demo: '+error.stack;});
+</script>

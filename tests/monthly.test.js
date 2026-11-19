@@ -67,6 +67,7 @@
  // Exercise the real form's visibility and validation handlers.
  localStorage.clear();setupGoogleAuth=()=>{};initApp();
  const form=document.getElementById('trainer-form');
+ monthlyEntry={status:'absent',month:trainingCalendar().key,file:null,plan:null};
  const assign=values=>{Object.entries(values).forEach(([key,value])=>form.elements[key].value=value);form.dispatchEvent(new Event('input'));};
  assign({mode:'auto-generat',generatedWorkoutCount:'5',daysForca:'2',daysMobilitat:'2',daysCardio:'1',daysSuperior:'1',daysInferior:'1',daysCore:'0',daysFullbody:'0'});
  check('Matching allocation enables Generate',!form.querySelector('button[type="submit"]').disabled);
@@ -101,6 +102,7 @@
  loadedMonthlySpec=null;await restoreMonthlyPlanSettings(files);
  check('Restore keeps all three combined-day counts',['daysSuperiorInferior','daysSuperiorCore','daysInferiorCore'].every(name=>form.elements[name].value==='1'));
  assign({mode:'auto-generat'});
+ monthlyEntry={status:'absent',month:trainingCalendar().key,file:null,plan:null};updateWorkoutAllocationFields();
  check('Matching combined allocation enables Generate',!form.querySelector('button[type="submit"]').disabled);
  assign({daysSuperiorCore:'2'});
  check('Mismatched combined allocation disables Generate',form.querySelector('button[type="submit"]').disabled);
