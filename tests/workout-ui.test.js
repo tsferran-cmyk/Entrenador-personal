@@ -24,6 +24,7 @@
  for(const mode of ['propio','auto-generat','pim-pam']){
   const radio=document.querySelector(`input[name="mode"][value="${mode}"]`);radio.checked=true;radio.dispatchEvent(new Event('change'));
   if(mode==='auto-generat')await refreshMonthlyEntry();
+  if(mode==='auto-generat'){form.elements.daysFullbody.value='1';form.dispatchEvent(new Event('input'));}
   check(mode+': questionnaire visibility',proposedFields.classList.contains('hidden')===(mode==='propio'));
   check(mode+': routine count visibility',generatedWorkoutCountFields.classList.contains('hidden')===(mode!=='auto-generat'));
   document.querySelector('input[name="trainingType"][value="forca"]').checked=true;

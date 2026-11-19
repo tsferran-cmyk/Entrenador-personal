@@ -26,7 +26,11 @@ es conserva l'anterior com a històric. Una sessió oberta també caduca en canv
 
 El formulari demana dies totals, material, durada, dies de força/mobilitat/càrdio
 i, per als dies de força, dies per zona corporal. Les modalitats han de sumar
-el total i les zones han de sumar els dies de força. Cada rutina té la seva
+el total i les zones han de sumar els dies de força.
+El formulari mostra totes dues sumes per separat: per exemple, 4 dies de força
+i 1 de mobilitat són 5 dies totals, però només 4 dies per repartir entre zones.
+Les zones comencen a zero, inclòs cos sencer; no hi ha cap dia preassignat.
+Cada rutina té la seva
 modalitat i zona; no es barregen els filtres de totes les rutines en obrir-ne una.
 Si el catàleg no permet crear prou rutines diferents, s'indica l'error.
 Les opcions de força inclouen `Superior + Inferior`, `Superior + Core` i

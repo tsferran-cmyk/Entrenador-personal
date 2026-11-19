@@ -1,4 +1,4 @@
-param([switch]$Demo, [switch]$Monthly, [switch]$Hub)
+param([switch]$Demo, [switch]$Monthly, [switch]$Hub, [switch]$Allocation)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $html = [IO.File]::ReadAllText((Join-Path $root 'index.html'))
@@ -9,6 +9,7 @@ $files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','
 if ($Demo) { $files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','demo.js','tests/demo.test.js') }
 if ($Monthly) { $files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','tests/monthly.test.js') }
 if ($Hub) { $files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','tests/monthly-hub.test.js') }
+if ($Allocation) { $files = @('catalog-preview-data.js','catalog.js','monthly-hub.js','script.js','tests/allocation.test.js') }
 foreach ($name in $files) {
     $scripts += "`n" + [IO.File]::ReadAllText((Join-Path $root $name))
 }

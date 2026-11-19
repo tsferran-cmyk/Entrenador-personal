@@ -188,6 +188,7 @@
                   <label>Mobilitat<input type="number" name="daysMobilitat" min="0" max="31" value="0" /></label>
                   <label>Càrdio<input type="number" name="daysCardio" min="0" max="31" value="0" /></label>
                 </div>
+                <p id="monthly-type-total" role="status" aria-live="polite"></p>
               </div>
 
               <div id="single-type-fields" class="question-group">
@@ -205,11 +206,13 @@
                   <label>Tronc superior<input type="number" name="daysSuperior" min="0" max="31" value="0" /></label>
                   <label>Tronc inferior<input type="number" name="daysInferior" min="0" max="31" value="0" /></label>
                   <label>Core<input type="number" name="daysCore" min="0" max="31" value="0" /></label>
-                  <label>Cos sencer<input type="number" name="daysFullbody" min="0" max="31" value="1" /></label>
+                  <label>Cos sencer<input type="number" name="daysFullbody" min="0" max="31" value="0" /></label>
                   <label>Superior + Inferior<input type="number" name="daysSuperiorInferior" min="0" max="31" value="0" /></label>
                   <label>Superior + Core<input type="number" name="daysSuperiorCore" min="0" max="31" value="0" /></label>
                   <label>Inferior + Core<input type="number" name="daysInferiorCore" min="0" max="31" value="0" /></label>
                 </div>
+                <p id="monthly-strength-total" role="status" aria-live="polite"></p>
+                <p>Les zones es comparen només amb els dies de força. Els dies de mobilitat i càrdio no s’hi compten.</p>
                 <p>Un dia combinat compta com un entrenament. Els exercicis alternen les dues zones.</p>
               </div>
 

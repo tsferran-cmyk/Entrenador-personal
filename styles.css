@@ -233,6 +233,7 @@ h2, h3 {
 }
 
 .monthly-routine-card { display: grid; gap: 8px; text-align: left; }
+.allocation-error { color: var(--danger); }
 #monthly-review-panel, #monthly-plan-entry { display: grid; gap: 16px; }
 #monthly-routine-detail article { display: grid; gap: 10px; }
 

@@ -6,6 +6,7 @@
  for(const mode of ['propio','auto-generat','pim-pam']){
   document.querySelector(`input[name="mode"][value="${mode}"]`).checked=true;toggleModeFields();
   if(mode==='auto-generat')await refreshMonthlyEntry();
+  if(mode==='auto-generat'){form.elements.daysFullbody.value='1';form.dispatchEvent(new Event('input'));}
   form.querySelector('button[type="submit"]').click();
   for(let i=0;i<50&&workoutScreen.classList.contains('hidden');i++)await new Promise(r=>setTimeout(r,10));
   check(mode+' generates exercises without OAuth',!workoutScreen.classList.contains('hidden')&&workoutExercises.length>0);

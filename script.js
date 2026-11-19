@@ -234,8 +234,7 @@ function trainingCalendar(date = new Date()) {
     remaining: new Date(Date.UTC(year, month, 0)).getUTCDate() - day + 1 };
 }
 
-function monthlyPlanSpec(formData, date, checkCapacity = true) {
-  const calendar = trainingCalendar(date);
+function monthlyAllocationCounts(formData) {
   const integer = (name, defaultZero = false) => {
     const raw = formData.get(name);
     if (raw === null && defaultZero) return 0;
@@ -246,16 +245,23 @@ function monthlyPlanSpec(formData, date, checkCapacity = true) {
   };
   const total = integer('generatedWorkoutCount');
   if (total < 1) throw new Error('Cal demanar almenys un dia d’entrenament.');
-  if (checkCapacity && total > calendar.remaining)
-    throw new Error(`Només queden ${calendar.remaining} dies disponibles aquest mes, inclòs avui. No es poden generar ${total} entrenaments.`);
   const types = { forca: integer('daysForca'), mobilitat: integer('daysMobilitat'), cardio: integer('daysCardio') };
-  if (Object.values(types).reduce((sum, n) => sum + n, 0) !== total)
-    throw new Error(`Els dies de força, mobilitat i càrdio han de sumar ${total}.`);
   const zones = types.forca ? {
     superior: integer('daysSuperior'), inferior: integer('daysInferior'), core: integer('daysCore'), fullbody: integer('daysFullbody'),
     superiorInferior: integer('daysSuperiorInferior', true), superiorCore: integer('daysSuperiorCore', true), inferiorCore: integer('daysInferiorCore', true)
   } : {};
-  if (Object.values(zones).reduce((sum, n) => sum + n, 0) !== types.forca)
+  return { total, types, zones, typeDays: Object.values(types).reduce((sum, days) => sum + days, 0),
+    strengthDays: Object.values(zones).reduce((sum, days) => sum + days, 0) };
+}
+
+function monthlyPlanSpec(formData, date, checkCapacity = true) {
+  const calendar = trainingCalendar(date);
+  const { total, types, zones, typeDays, strengthDays } = monthlyAllocationCounts(formData);
+  if (checkCapacity && total > calendar.remaining)
+    throw new Error(`Només queden ${calendar.remaining} dies disponibles aquest mes, inclòs avui. No es poden generar ${total} entrenaments.`);
+  if (typeDays !== total)
+    throw new Error(`Els dies de força, mobilitat i càrdio han de sumar ${total}.`);
+  if (strengthDays !== types.forca)
     throw new Error(`Els dies de les zones corporals han de sumar ${types.forca}, el total de dies de força.`);
   const routines = [];
   const combinations = { superiorInferior: ['superior', 'inferior'], superiorCore: ['superior', 'core'], inferiorCore: ['inferior', 'core'] };
@@ -307,8 +313,18 @@ function updateWorkoutAllocationFields() {
   const status = document.getElementById('allocation-status');
   let valid = true;
   if (monthly) {
+    const typeStatus = document.getElementById('monthly-type-total');
+    const strengthStatus = document.getElementById('monthly-strength-total');
+    typeStatus.textContent = ''; strengthStatus.textContent = '';
     try {
       const data = new FormData(form);
+      const counts = monthlyAllocationCounts(data);
+      typeStatus.textContent = `Modalitats: ${counts.typeDays} de ${counts.total} dies totals.`;
+      strengthStatus.textContent = `Zones de força: ${counts.strengthDays} de ${counts.types.forca} dies de força.`;
+      typeStatus.classList.toggle('allocation-error', counts.typeDays !== counts.total);
+      strengthStatus.classList.toggle('allocation-error', counts.strengthDays !== counts.types.forca);
+      document.getElementById('monthly-type-fields').querySelectorAll('input').forEach(input => input.max = counts.total);
+      document.getElementById('monthly-strength-fields').querySelectorAll('input').forEach(input => input.max = counts.types.forca);
       const spec = monthlyPlanSpec(data, undefined, false);
       const existing = monthlyPlanSignature(spec) === monthlyPlanSignature(loadedMonthlySpec);
       if (!existing) monthlyPlanSpec(data);
